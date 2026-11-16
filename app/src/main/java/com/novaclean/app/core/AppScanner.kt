@@ -32,11 +32,12 @@ class AppScanner(private val ctx: Context) {
         running: Set<String>?,
         foregroundServices: Set<String>,
         userProtected: Set<String>,
+        recentMin: Int = 3,
     ): List<AppEntry> {
         val pm = ctx.packageManager
         val now = System.currentTimeMillis()
         val used = lastUsedMap()
-        val recent = used.filter { it.value > 0 && now - it.value < 3 * 60_000L }.keys
+        val recent = used.filter { it.value > 0 && now - it.value < recentMin * 60_000L }.keys
         val prot = Protection(ctx, userProtected, foregroundServices, recent)
 
         val out = ArrayList<AppEntry>()

@@ -41,3 +41,13 @@ Optional: **Usage Access** gives a "recently used" list when no shell engine is 
 ## Next steps
 
 Scheduled auto-clean, in-app update from GitHub Releases, TV-first layout polish.
+
+## 1.1
+
+- **Settings** holds all configuration (AI, one-tap options, protected apps, permissions, engines, backup).
+- **Files:** everything Nova Clean saves is in `Download/NovaClean/` (`Backups/` and `history.txt`).
+- **Backup / Restore:** local, optional password (encrypted, includes the API key). Without a password the key is left out.
+- **One-tap:** the *Clean now* button, the home-screen widget and the long-press icon shortcut all run the same job,
+  customised in Settings (what to close, caches, result message/notification, widget text).
+- **Permissions page:** battery (unrestricted), display over other apps, usage access, notifications, storage (Android 7-9),
+  Shizuku, autostart page of the phone maker, app info page.

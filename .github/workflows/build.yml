@@ -8,6 +8,12 @@ on:
 permissions:
   contents: write
 
+env:
+  # Bump VERSION_NAME for a new version and set BUILD_OFFSET to (current run number - 1)
+  # so the displayed build number restarts at 01.
+  VERSION_NAME: "1.1"
+  BUILD_OFFSET: "2"
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -24,7 +30,6 @@ jobs:
           gradle-version: "8.7"
 
       # Optional: same signing key as your other Nova apps (keeps updates installable).
-      # Without the secrets the APK is signed with a debug key (still installs fine).
       - name: Decode keystore
         env:
           KS_B64: ${{ secrets.KEYSTORE_BASE64 }}
@@ -34,9 +39,15 @@ jobs:
             echo "KEYSTORE_PATH=$RUNNER_TEMP/nova.jks" >> "$GITHUB_ENV"
           fi
 
+      - name: Compute build number
+        run: |
+          BN=$(( ${{ github.run_number }} - BUILD_OFFSET ))
+          echo "BUILD_NUMBER=$BN" >> "$GITHUB_ENV"
+          echo "BN2=$(printf '%02d' $BN)" >> "$GITHUB_ENV"
+          echo "VERSION_CODE=${{ github.run_number }}" >> "$GITHUB_ENV"
+
       - name: Build release APK
         env:
-          BUILD_NUMBER: ${{ github.run_number }}
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
@@ -44,10 +55,9 @@ jobs:
 
       - name: Name APK and checksum
         run: |
-          N=$(printf "%02d" "${{ github.run_number }}")
           mkdir -p out
-          cp app/build/outputs/apk/release/app-release.apk "out/NovaClean-1.0-build-$N.apk"
-          (cd out && sha256sum "NovaClean-1.0-build-$N.apk" > "NovaClean-1.0-build-$N.apk.sha256")
+          cp app/build/outputs/apk/release/app-release.apk "out/NovaClean-$VERSION_NAME-build-$BN2.apk"
+          (cd out && sha256sum "NovaClean-$VERSION_NAME-build-$BN2.apk" > "NovaClean-$VERSION_NAME-build-$BN2.apk.sha256")
 
       - uses: actions/upload-artifact@v4
         with:
@@ -56,6 +66,6 @@ jobs:
 
       - uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.0-build-${{ github.run_number }}
-          name: Nova Clean 1.0 · build ${{ github.run_number }}
+          tag_name: v${{ env.VERSION_NAME }}-build-${{ env.BN2 }}
+          name: Nova Clean ${{ env.VERSION_NAME }} · build ${{ env.BN2 }}
           files: out/*

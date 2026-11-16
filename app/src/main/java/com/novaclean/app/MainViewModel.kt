@@ -1,12 +1,21 @@
 package com.novaclean.app
 
+import android.Manifest
 import android.app.Application
+import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
+import android.os.PowerManager
+import android.provider.Settings
+import androidx.core.app.NotificationManagerCompat
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.novaclean.app.ai.AiClassifier
 import com.novaclean.app.core.AppEntry
 import com.novaclean.app.core.AppScanner
+import com.novaclean.app.core.Backup
+import com.novaclean.app.core.CleanJob
 import com.novaclean.app.core.Prefs
 import com.novaclean.app.core.Verdict
 import com.novaclean.app.engine.EngineManager
@@ -20,52 +29,98 @@ import kotlinx.coroutines.withContext
 
 data class EngineRow(val title: String, val ready: Boolean, val hint: String)
 
+data class Perms(
+    val battery: Boolean = false,
+    val overlay: Boolean = false,
+    val usage: Boolean = false,
+    val notif: Boolean = false,
+    val storage: Boolean = true,
+    val shizuku: Boolean = false,
+)
+
+data class Cfg(
+    val apiKey: String = "",
+    val model: String = Prefs.DEFAULT_MODEL,
+    val mode: String = Prefs.MODE_AI_SAFE,
+    val closeApps: Boolean = true,
+    val cleanCaches: Boolean = true,
+    val toast: Boolean = true,
+    val notify: Boolean = true,
+    val history: Boolean = true,
+    val recentMin: Int = 3,
+    val widgetLabel: String = "Clean now",
+    val protectedPkgs: List<String> = emptyList(),
+)
+
 data class UiState(
     val engines: List<EngineRow> = emptyList(),
     val activeEngine: String = "",
     val apps: List<AppEntry> = emptyList(),
     val busy: String? = null,
-    val message: String = "Tap Scan to list apps that can be reviewed.",
-    val usageAccess: Boolean = false,
-    val hasKey: Boolean = false,
+    val message: String = "Tap Clean now, or Scan to review apps first.",
+    val perms: Perms = Perms(),
+    val cfg: Cfg = Cfg(),
+    val settingsMsg: String = "",
+    val needPassword: Boolean = false,
 )
 
-class MainViewModel(app: Application) : AndroidViewModel(app) {
+class MainViewModel(private val app: Application) : AndroidViewModel(app) {
     private val prefs = Prefs(app)
     private val engines = EngineManager(app)
     private val scanner = AppScanner(app)
+    private var pendingRestore: ByteArray? = null
 
-    private val _ui = MutableStateFlow(UiState())
+    private val _ui = MutableStateFlow(UiState(cfg = readCfg()))
     val ui: StateFlow<UiState> = _ui.asStateFlow()
 
-    val apiKey get() = prefs.apiKey
-    val model get() = prefs.model
+    init { refreshAll() }
 
-    init { refreshEngines() }
+    private fun readCfg() = Cfg(
+        apiKey = prefs.apiKey, model = prefs.model, mode = prefs.mode,
+        closeApps = prefs.closeApps, cleanCaches = prefs.cleanCaches,
+        toast = prefs.toastResult, notify = prefs.notifyResult, history = prefs.keepHistory,
+        recentMin = prefs.recentProtectMin, widgetLabel = prefs.widgetLabel,
+        protectedPkgs = prefs.protectedPkgs.sorted(),
+    )
 
-    fun saveSettings(key: String, model: String) {
-        prefs.apiKey = key
-        prefs.model = model
-        refreshEngines()
+    private fun readPerms(shizukuReady: Boolean): Perms {
+        val pm = app.getSystemService(android.content.Context.POWER_SERVICE) as PowerManager
+        val notif = if (Build.VERSION.SDK_INT >= 33)
+            ContextCompat.checkSelfPermission(app, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+        else NotificationManagerCompat.from(app).areNotificationsEnabled()
+        val storage = Build.VERSION.SDK_INT > 28 ||
+            ContextCompat.checkSelfPermission(app, Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED
+        return Perms(
+            battery = pm.isIgnoringBatteryOptimizations(app.packageName),
+            overlay = Settings.canDrawOverlays(app),
+            usage = scanner.hasUsageAccess(),
+            notif = notif, storage = storage, shizuku = shizukuReady,
+        )
     }
 
-    fun refreshEngines() {
+    fun refreshAll() {
         viewModelScope.launch {
             val st = engines.statuses()
             val best = engines.best()
+            val shizukuReady = st.firstOrNull { it.first.id == "shizuku" }?.second?.ready == true
             _ui.update {
                 it.copy(
                     engines = st.map { (e, s) -> EngineRow(e.title, s.ready, s.hint) },
                     activeEngine = best.title,
-                    usageAccess = scanner.hasUsageAccess(),
-                    hasKey = prefs.apiKey.isNotBlank(),
+                    perms = readPerms(shizukuReady),
+                    cfg = readCfg(),
                 )
             }
         }
     }
 
-    fun requestShizuku() {
-        engines.shizuku.requestPermission()
+    fun requestShizuku() = engines.shizuku.requestPermission()
+
+    /** Change any setting: vm.update { closeApps = true } */
+    fun update(block: Prefs.() -> Unit) {
+        prefs.block()
+        CleanWidget.updateAll(app)
+        _ui.update { it.copy(cfg = readCfg()) }
     }
 
     private fun launchBusy(msg: String, block: suspend () -> Unit) {
@@ -81,24 +136,30 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    // ---------- One tap ----------
+    fun cleanNow() = launchBusy("Cleaning…") {
+        val r = CleanJob(app).run { step -> _ui.update { it.copy(busy = step) } }
+        _ui.update { it.copy(message = r.summary(), apps = emptyList()) }
+    }
+
+    // ---------- Review flow ----------
     fun scan() = launchBusy("Scanning…") {
         val shell = engines.bestShell()
         val running = shell?.runningPackages()
         val fg = shell?.foregroundServicePackages() ?: emptySet()
         val list = withContext(Dispatchers.Default) {
-            scanner.scan(running, fg, prefs.protectedPkgs)
+            scanner.scan(running, fg, prefs.protectedPkgs, prefs.recentProtectMin)
         }
         val tip = when {
             shell == null && !scanner.hasUsageAccess() ->
-                " Tip: grant Usage Access or start Shizuku for a more accurate list."
-            shell == null -> " (Based on apps used in the last 24 h.)"
+                " Tip: grant Usage Access in Settings for a more accurate list."
+            shell == null -> " (Apps used in the last 24 h.)"
             else -> ""
         }
         _ui.update {
             it.copy(
                 apps = list,
-                usageAccess = scanner.hasUsageAccess(),
-                message = "${list.count { a -> !a.isProtected }} apps can be reviewed, " +
+                message = "${list.count { a -> !a.isProtected }} apps to review, " +
                     "${list.count { a -> a.isProtected }} protected.$tip",
             )
         }
@@ -114,11 +175,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             _ui.update { it.copy(message = "Add your Gemini API key in Settings.") }
             return@launchBusy
         }
-        val device = "${Build.MANUFACTURER} ${Build.MODEL}, Android ${Build.VERSION.RELEASE}, " +
-            if (getApplication<Application>().packageManager
-                    .hasSystemFeature("android.software.leanback")) "TV box" else "phone/tablet"
         val res = withContext(Dispatchers.IO) {
-            AiClassifier(prefs.apiKey, prefs.model).classify(cands, device)
+            AiClassifier(prefs.apiKey, prefs.model).classify(cands, CleanJob.deviceInfo(app))
         }
         _ui.update { st ->
             st.copy(
@@ -126,16 +184,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     val r = res[a.pkg]
                     if (a.isProtected || r == null) return@map a
                     if (r.first == Verdict.NEVER) {
-                        // AI veto: NEVER becomes locked like the hard list.
                         a.copy(
                             verdict = r.first, aiReason = r.second,
                             protectedReason = "AI: never close (${r.second})", selected = false,
                         )
                     } else {
-                        a.copy(
-                            verdict = r.first, aiReason = r.second,
-                            selected = r.first == Verdict.SAFE,
-                        )
+                        a.copy(verdict = r.first, aiReason = r.second, selected = r.first == Verdict.SAFE)
                     }
                 },
                 message = "AI done. Safe apps are pre-selected. Review, then tap Close selected.",
@@ -150,14 +204,22 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun protect(pkg: String) {
         prefs.protectedPkgs = prefs.protectedPkgs + pkg
         _ui.update { st ->
-            st.copy(apps = st.apps.map {
-                if (it.pkg == pkg) it.copy(protectedReason = "Protected by you", selected = false) else it
-            })
+            st.copy(
+                cfg = readCfg(),
+                apps = st.apps.map {
+                    if (it.pkg == pkg) it.copy(protectedReason = "Protected by you", selected = false) else it
+                },
+            )
         }
     }
 
+    fun unprotect(pkg: String) {
+        prefs.protectedPkgs = prefs.protectedPkgs - pkg
+        _ui.update { it.copy(cfg = readCfg()) }
+    }
+
     fun closeSelected() = launchBusy("Closing apps…") {
-        val sel = _ui.value.apps.filter { it.selected && !it.isProtected }   // re-check protection
+        val sel = _ui.value.apps.filter { it.selected && !it.isProtected }
         if (sel.isEmpty()) {
             _ui.update { it.copy(message = "Nothing selected.") }
             return@launchBusy
@@ -167,7 +229,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         for (a in sel) {
             _ui.update { it.copy(busy = "Closing ${a.label}…") }
             if (eng.forceStop(a.pkg)) ok++
-            engines.basic.forceStop(a.pkg)       // cheap extra pass
+            engines.basic.forceStop(a.pkg)
         }
         val closed = sel.map { it.pkg }.toSet()
         _ui.update { st ->
@@ -178,18 +240,43 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun cleanCaches() = launchBusy("Clearing caches…") {
-        val shell = engines.bestShell()
-        if (shell == null) {
-            _ui.update {
-                it.copy(message = "Clearing every app's cache needs Shizuku/ADB or root " +
-                    "(Android blocks it for normal apps). See README to set up Shizuku.")
-            }
+    // ---------- Backup / restore ----------
+    fun backup(password: String) = launchBusy("Saving backup…") {
+        val r = withContext(Dispatchers.IO) { Backup.create(app, prefs, password) }
+        _ui.update { it.copy(settingsMsg = r.message) }
+    }
+
+    fun restoreFrom(uri: Uri) = launchBusy("Reading backup…") {
+        val bytes = withContext(Dispatchers.IO) {
+            app.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+        }
+        if (bytes == null) {
+            _ui.update { it.copy(settingsMsg = "Could not open that file.") }
             return@launchBusy
         }
-        val ok = shell.trimCaches()
-        _ui.update {
-            it.copy(message = if (ok) "Caches cleared using ${shell.title}." else "Cache clearing failed.")
+        if (Backup.isEncrypted(bytes)) {
+            pendingRestore = bytes
+            _ui.update { it.copy(needPassword = true) }
+        } else {
+            applyRestore(bytes, "")
         }
+    }
+
+    fun restoreWithPassword(password: String) {
+        val bytes = pendingRestore ?: return
+        _ui.update { it.copy(needPassword = false) }
+        viewModelScope.launch { applyRestore(bytes, password) }
+    }
+
+    fun cancelRestore() {
+        pendingRestore = null
+        _ui.update { it.copy(needPassword = false) }
+    }
+
+    private suspend fun applyRestore(bytes: ByteArray, password: String) {
+        val r = withContext(Dispatchers.IO) { Backup.restore(prefs, bytes, password) }
+        if (r.ok) pendingRestore = null
+        CleanWidget.updateAll(app)
+        _ui.update { it.copy(settingsMsg = r.message, cfg = readCfg()) }
     }
 }

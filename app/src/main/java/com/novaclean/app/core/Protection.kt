@@ -73,7 +73,7 @@ class Protection(
         if (pkg in userProtected) return "Protected by you"
         dynamic[pkg]?.let { return it }
         if (pkg in foregroundServices) return "Running a foreground service (playing / recording)"
-        if (pkg in recentlyUsed) return "In use in the last 3 minutes"
+        if (pkg in recentlyUsed) return "Used very recently"
         if (isVpn(pkg)) return "VPN app"
         return null
     }

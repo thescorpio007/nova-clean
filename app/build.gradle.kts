@@ -3,7 +3,8 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
-val buildNo = (System.getenv("BUILD_NUMBER") ?: "1").toInt()
+val buildNo = (System.getenv("BUILD_NUMBER") ?: "1").toInt()   // shown in the app, restarts at 01 per version
+val verName = System.getenv("VERSION_NAME") ?: "1.1"
 val keystorePath: String? = System.getenv("KEYSTORE_PATH")
 
 android {
@@ -14,9 +15,9 @@ android {
         applicationId = "com.novaclean.app"
         minSdk = 24            // Android 7.0 and above
         targetSdk = 34
-        versionCode = buildNo
-        versionName = "1.0"
-        buildConfigField("String", "BUILD_LABEL", "\"1.0 · build ${"%02d".format(buildNo)}\"")
+        versionCode = (System.getenv("VERSION_CODE") ?: "1").toInt()
+        versionName = verName
+        buildConfigField("String", "BUILD_LABEL", "\"$verName · build ${"%02d".format(buildNo)}\"")
     }
 
     signingConfigs {
