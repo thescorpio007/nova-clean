@@ -2,6 +2,7 @@ package com.novaclean.app
 
 import android.Manifest
 import android.app.Application
+import android.content.Context
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
@@ -16,9 +17,15 @@ import com.novaclean.app.core.AppEntry
 import com.novaclean.app.core.AppScanner
 import com.novaclean.app.core.Backup
 import com.novaclean.app.core.CleanJob
+import com.novaclean.app.core.CrashLog
+import com.novaclean.app.core.NovaFiles
 import com.novaclean.app.core.Prefs
+import com.novaclean.app.core.Report
+import com.novaclean.app.core.UpdateScheduler
+import com.novaclean.app.core.Updater
 import com.novaclean.app.core.Verdict
 import com.novaclean.app.engine.EngineManager
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -35,6 +42,7 @@ data class Perms(
     val usage: Boolean = false,
     val notif: Boolean = false,
     val storage: Boolean = true,
+    val install: Boolean = true,
     val shizuku: Boolean = false,
 )
 
@@ -49,6 +57,7 @@ data class Cfg(
     val history: Boolean = true,
     val recentMin: Int = 3,
     val widgetLabel: String = "Clean now",
+    val autoUpdate: Boolean = true,
     val protectedPkgs: List<String> = emptyList(),
 )
 
@@ -62,6 +71,9 @@ data class UiState(
     val cfg: Cfg = Cfg(),
     val settingsMsg: String = "",
     val needPassword: Boolean = false,
+    val updateStatus: String = "",
+    val updateReady: String = "",
+    val updatePrompt: Boolean = false,
 )
 
 class MainViewModel(private val app: Application) : AndroidViewModel(app) {
@@ -73,43 +85,65 @@ class MainViewModel(private val app: Application) : AndroidViewModel(app) {
     private val _ui = MutableStateFlow(UiState(cfg = readCfg()))
     val ui: StateFlow<UiState> = _ui.asStateFlow()
 
-    init { refreshAll() }
+    init {
+        val ready = Updater.pendingReady(app)
+        _ui.update {
+            it.copy(
+                updateStatus = prefs.updateStatus,
+                updateReady = ready ?: "",
+                updatePrompt = ready != null,
+                message = if (CrashLog.consumeCrashFlag(app))
+                    "Nova Clean closed unexpectedly last time. The crash was saved. " +
+                        "Settings → 8 → Share report sends it for analysis."
+                else it.message,
+            )
+        }
+        refreshAll()
+    }
 
     private fun readCfg() = Cfg(
         apiKey = prefs.apiKey, model = prefs.model, mode = prefs.mode,
         closeApps = prefs.closeApps, cleanCaches = prefs.cleanCaches,
         toast = prefs.toastResult, notify = prefs.notifyResult, history = prefs.keepHistory,
         recentMin = prefs.recentProtectMin, widgetLabel = prefs.widgetLabel,
-        protectedPkgs = prefs.protectedPkgs.sorted(),
+        autoUpdate = prefs.autoUpdate, protectedPkgs = prefs.protectedPkgs.sorted(),
     )
 
     private fun readPerms(shizukuReady: Boolean): Perms {
-        val pm = app.getSystemService(android.content.Context.POWER_SERVICE) as PowerManager
+        val pm = app.getSystemService(Context.POWER_SERVICE) as PowerManager
         val notif = if (Build.VERSION.SDK_INT >= 33)
             ContextCompat.checkSelfPermission(app, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
         else NotificationManagerCompat.from(app).areNotificationsEnabled()
         val storage = Build.VERSION.SDK_INT > 28 ||
             ContextCompat.checkSelfPermission(app, Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED
+        val install = Build.VERSION.SDK_INT < 26 || app.packageManager.canRequestPackageInstalls()
         return Perms(
             battery = pm.isIgnoringBatteryOptimizations(app.packageName),
             overlay = Settings.canDrawOverlays(app),
             usage = scanner.hasUsageAccess(),
-            notif = notif, storage = storage, shizuku = shizukuReady,
+            notif = notif, storage = storage, install = install, shizuku = shizukuReady,
         )
     }
 
     fun refreshAll() {
         viewModelScope.launch {
-            val st = engines.statuses()
-            val best = engines.best()
-            val shizukuReady = st.firstOrNull { it.first.id == "shizuku" }?.second?.ready == true
-            _ui.update {
-                it.copy(
-                    engines = st.map { (e, s) -> EngineRow(e.title, s.ready, s.hint) },
-                    activeEngine = best.title,
-                    perms = readPerms(shizukuReady),
-                    cfg = readCfg(),
-                )
+            try {
+                val st = engines.statuses()
+                val best = engines.best()
+                CrashLog.engine = best.title
+                val shizukuReady = st.firstOrNull { it.first.id == "shizuku" }?.second?.ready == true
+                _ui.update {
+                    it.copy(
+                        engines = st.map { (e, s) -> EngineRow(e.title, s.ready, s.hint) },
+                        activeEngine = best.title,
+                        perms = readPerms(shizukuReady),
+                        cfg = readCfg(),
+                    )
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (t: Throwable) {
+                CrashLog.logError(app, "refresh", t)
             }
         }
     }
@@ -120,18 +154,27 @@ class MainViewModel(private val app: Application) : AndroidViewModel(app) {
     fun update(block: Prefs.() -> Unit) {
         prefs.block()
         CleanWidget.updateAll(app)
+        UpdateScheduler.apply(app)
         _ui.update { it.copy(cfg = readCfg()) }
     }
 
+    /** Every action runs inside this wrapper: a failure is logged and shown, never a crash. */
     private fun launchBusy(msg: String, block: suspend () -> Unit) {
         viewModelScope.launch {
+            CrashLog.action = msg
             _ui.update { it.copy(busy = msg) }
             try {
                 block()
-            } catch (e: Exception) {
-                _ui.update { it.copy(message = "Error: ${e.message}") }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (t: Throwable) {
+                CrashLog.logError(app, msg, t)
+                _ui.update {
+                    it.copy(message = "Something went wrong and was saved to the log (Settings → 8). ${t.message ?: ""}")
+                }
             } finally {
                 _ui.update { it.copy(busy = null) }
+                CrashLog.action = "idle"
             }
         }
     }
@@ -145,8 +188,9 @@ class MainViewModel(private val app: Application) : AndroidViewModel(app) {
     // ---------- Review flow ----------
     fun scan() = launchBusy("Scanning…") {
         val shell = engines.bestShell()
-        val running = shell?.runningPackages()
-        val fg = shell?.foregroundServicePackages() ?: emptySet()
+        val running = shell?.let { s -> CrashLog.guard(app, "process list") { s.runningPackages() } }
+        val fg = shell?.let { s -> CrashLog.guard(app, "foreground services") { s.foregroundServicePackages() } }
+            ?: emptySet()
         val list = withContext(Dispatchers.Default) {
             scanner.scan(running, fg, prefs.protectedPkgs, prefs.recentProtectMin)
         }
@@ -172,7 +216,7 @@ class MainViewModel(private val app: Application) : AndroidViewModel(app) {
             return@launchBusy
         }
         if (prefs.apiKey.isBlank()) {
-            _ui.update { it.copy(message = "Add your Gemini API key in Settings.") }
+            _ui.update { it.copy(message = "Add your Gemini API key in Settings → 1.") }
             return@launchBusy
         }
         val res = withContext(Dispatchers.IO) {
@@ -228,8 +272,8 @@ class MainViewModel(private val app: Application) : AndroidViewModel(app) {
         var ok = 0
         for (a in sel) {
             _ui.update { it.copy(busy = "Closing ${a.label}…") }
-            if (eng.forceStop(a.pkg)) ok++
-            engines.basic.forceStop(a.pkg)
+            if (CrashLog.guard(app, "force-stop ${a.pkg}") { eng.forceStop(a.pkg) } == true) ok++
+            CrashLog.guard(app, "background-kill ${a.pkg}") { engines.basic.forceStop(a.pkg) }
         }
         val closed = sel.map { it.pkg }.toSet()
         _ui.update { st ->
@@ -265,7 +309,9 @@ class MainViewModel(private val app: Application) : AndroidViewModel(app) {
     fun restoreWithPassword(password: String) {
         val bytes = pendingRestore ?: return
         _ui.update { it.copy(needPassword = false) }
-        viewModelScope.launch { applyRestore(bytes, password) }
+        viewModelScope.launch {
+            CrashLog.guard(app, "restore") { applyRestore(bytes, password) }
+        }
     }
 
     fun cancelRestore() {
@@ -277,6 +323,55 @@ class MainViewModel(private val app: Application) : AndroidViewModel(app) {
         val r = withContext(Dispatchers.IO) { Backup.restore(prefs, bytes, password) }
         if (r.ok) pendingRestore = null
         CleanWidget.updateAll(app)
+        UpdateScheduler.apply(app)
         _ui.update { it.copy(settingsMsg = r.message, cfg = readCfg()) }
+    }
+
+    // ---------- Updates ----------
+    fun checkUpdates() = launchBusy("Checking GitHub…") {
+        val o = withContext(Dispatchers.IO) { Updater.checkAndDownload(app) }
+        prefs.updateStatus = o.status
+        val ready = if (o.ready) Updater.pendingReady(app) else null
+        _ui.update {
+            it.copy(updateStatus = o.status, updateReady = ready ?: "", updatePrompt = ready != null)
+        }
+    }
+
+    fun installUpdate() {
+        try {
+            val err = Updater.install(app)
+            if (err != null) _ui.update { it.copy(updateStatus = err) }
+        } catch (t: Throwable) {
+            CrashLog.logError(app, "install update", t)
+            _ui.update { it.copy(updateStatus = "Could not open the installer: ${t.message}") }
+        }
+    }
+
+    fun dismissUpdatePrompt() = _ui.update { it.copy(updatePrompt = false) }
+
+    // ---------- Logs & report ----------
+    fun prepareReport(onReady: (Uri, String) -> Unit) {
+        viewModelScope.launch {
+            val lines = _ui.value.engines.map { "${if (it.ready) "●" else "○"} ${it.title} — ${it.hint}" }
+            val r = withContext(Dispatchers.IO) {
+                CrashLog.guard(app, "report") { Report.write(app, prefs, lines) }
+            }
+            if (r != null) {
+                _ui.update { it.copy(settingsMsg = "Report saved: ${NovaFiles.pathOf(CrashLog.SUB)}/NovaClean-report.txt") }
+                onReady(r.first, r.second)
+            } else {
+                _ui.update { it.copy(settingsMsg = "Could not build the report.") }
+            }
+        }
+    }
+
+    fun clearCrashLog() {
+        CrashLog.clear(app)
+        _ui.update { it.copy(settingsMsg = "Crash log cleared.") }
+    }
+
+    fun clearHistory() {
+        NovaFiles.clearHistory(app)
+        _ui.update { it.copy(settingsMsg = "History cleared.") }
     }
 }

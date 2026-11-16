@@ -1,10 +1,14 @@
 package com.novaclean.app
 
 import android.Manifest
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -40,6 +44,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.novaclean.app.core.NovaFiles
 import com.novaclean.app.core.Prefs
 
+private const val AI_STUDIO_KEYS = "https://aistudio.google.com/apikey"
+
 @Composable
 fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit) {
     val ui by vm.ui.collectAsStateWithLifecycle()
@@ -60,8 +66,8 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit) {
             Text("Settings", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
         }
 
-        // ---------------- AI ----------------
-        Section("AI (Gemini)") {
+        // ---------------- 1 ----------------
+        Section("1. AI (Gemini)") {
             var key by remember(cfg.apiKey) { mutableStateOf(cfg.apiKey) }
             var model by remember(cfg.model) { mutableStateOf(cfg.model) }
             OutlinedTextField(key, { key = it }, label = { Text("API key") }, singleLine = true,
@@ -70,11 +76,22 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit) {
                 modifier = Modifier.fillMaxWidth())
             Text("Only package names, app names and last-used times are sent. No personal data.",
                 color = Grey, fontSize = 11.sp, modifier = Modifier.padding(vertical = 4.dp))
-            Button(onClick = { vm.update { apiKey = key; this.model = model } }) { Text("Save AI settings") }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(onClick = { vm.update { apiKey = key; this.model = model } }) { Text("Save") }
+                Button(onClick = {
+                    // Chrome first, then any browser
+                    ctx.launchFirst(
+                        Intent(Intent.ACTION_VIEW, Uri.parse(AI_STUDIO_KEYS)).setPackage("com.android.chrome"),
+                        Intent(Intent.ACTION_VIEW, Uri.parse(AI_STUDIO_KEYS)),
+                    )
+                }) { Text("Get API key") }
+            }
+            Text("Get API key opens Google AI Studio. Sign in, tap Create API key, copy it, come back and paste it above.",
+                color = Grey, fontSize = 11.sp, modifier = Modifier.padding(top = 4.dp))
         }
 
-        // ---------------- One tap ----------------
-        Section("One-tap clean (Clean now, widget, shortcut)") {
+        // ---------------- 2 ----------------
+        Section("2. One-tap clean (Clean now, widget, shortcut)") {
             SwitchRow("Close background apps", cfg.closeApps) { v -> vm.update { closeApps = v } }
             SwitchRow("Clear caches (needs Shizuku or root)", cfg.cleanCaches) { v -> vm.update { cleanCaches = v } }
             Text("Which apps get closed", color = Color.White, fontSize = 13.sp, modifier = Modifier.padding(top = 6.dp))
@@ -102,8 +119,8 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit) {
                 color = Grey, fontSize = 11.sp, modifier = Modifier.padding(top = 4.dp))
         }
 
-        // ---------------- Protected ----------------
-        Section("Protected apps (never closed)") {
+        // ---------------- 3 ----------------
+        Section("3. Protected apps (never closed)") {
             if (cfg.protectedPkgs.isEmpty()) {
                 Text("None yet. Tap Protect next to an app on the main screen.", color = Grey, fontSize = 12.sp)
             }
@@ -115,8 +132,8 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit) {
             }
         }
 
-        // ---------------- Permissions ----------------
-        Section("Permissions & background") {
+        // ---------------- 4 ----------------
+        Section("4. Permissions & background") {
             PermRow("Unrestricted battery", "Stops Android from killing Nova Clean in the background.", p.battery) {
                 ctx.launchFirst(
                     Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:${ctx.packageName}")),
@@ -132,10 +149,16 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit) {
             PermRow("Usage access", "Shows which apps were used recently.", p.usage) {
                 ctx.launchFirst(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS), ctx.appDetailsIntent())
             }
-            PermRow("Notifications", "For the result notification.", p.notif) {
+            PermRow("Notifications", "For result and update notifications.", p.notif) {
                 if (Build.VERSION.SDK_INT >= 33) permLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
                 else ctx.launchFirst(
                     Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, ctx.packageName),
+                    ctx.appDetailsIntent(),
+                )
+            }
+            PermRow("Install updates", "Allows Nova Clean to open the installer for its own updates.", p.install) {
+                ctx.launchFirst(
+                    Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:${ctx.packageName}")),
                     ctx.appDetailsIntent(),
                 )
             }
@@ -156,8 +179,8 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit) {
             TextButton(onClick = vm::refreshAll) { Text("Refresh status") }
         }
 
-        // ---------------- Engines ----------------
-        Section("Engines (strongest ready one is used)") {
+        // ---------------- 5 ----------------
+        Section("5. Engines (strongest ready one is used)") {
             ui.engines.forEach {
                 Text(
                     "${if (it.ready) "●" else "○"} ${it.title} — ${it.hint}",
@@ -167,10 +190,28 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit) {
             }
         }
 
-        // ---------------- Backup ----------------
-        Section("Backup & restore (local)") {
+        // ---------------- 6 ----------------
+        Section("6. Updates (GitHub)") {
+            SwitchRow("Check every 6 hours and download silently", cfg.autoUpdate) { v -> vm.update { autoUpdate = v } }
+            Text("Current: ${BuildConfig.BUILD_LABEL}", color = Color.White, fontSize = 12.sp,
+                modifier = Modifier.padding(top = 4.dp))
+            if (ui.updateStatus.isNotEmpty()) {
+                Text(ui.updateStatus, color = Amber, fontSize = 12.sp, modifier = Modifier.padding(top = 2.dp))
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 6.dp)) {
+                Button(onClick = vm::checkUpdates, enabled = ui.busy == null) { Text("Check now") }
+                if (ui.updateReady.isNotEmpty()) {
+                    Button(onClick = vm::installUpdate) { Text("Install ${ui.updateReady}") }
+                }
+            }
+            Text("Updates come from github.com/thescorpio007/nova-clean and are verified with SHA-256 before install.",
+                color = Grey, fontSize = 11.sp, modifier = Modifier.padding(top = 4.dp))
+        }
+
+        // ---------------- 7 ----------------
+        Section("7. Backup & restore (local)") {
             var pass by remember { mutableStateOf("") }
-            Text("Files are kept in ${NovaFiles.FOLDER}: Backups/ and ${NovaFiles.HISTORY}.",
+            Text("Files are kept in ${NovaFiles.FOLDER}: Backups/, Logs/ and ${NovaFiles.HISTORY}.",
                 color = Grey, fontSize = 12.sp)
             OutlinedTextField(pass, { pass = it }, label = { Text("Backup password (optional)") },
                 singleLine = true, visualTransformation = PasswordVisualTransformation(),
@@ -181,12 +222,43 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit) {
                 Button(onClick = { vm.backup(pass) }, enabled = ui.busy == null) { Text("Back up now") }
                 Button(onClick = { restorePicker.launch(arrayOf("*/*")) }, enabled = ui.busy == null) { Text("Restore…") }
             }
-            if (ui.settingsMsg.isNotEmpty()) {
-                Text(ui.settingsMsg, color = Amber, fontSize = 12.sp, modifier = Modifier.padding(top = 6.dp))
+        }
+
+        // ---------------- 8 ----------------
+        Section("8. Logs & crash reports") {
+            Text("Every crash and error is saved with device information in " +
+                "${NovaFiles.pathOf("Logs")}/crash-log.txt. The report adds settings and clean history in one text file " +
+                "you can attach in Claude.", color = Grey, fontSize = 12.sp)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 6.dp)) {
+                Button(onClick = {
+                    vm.prepareReport { uri, _ ->
+                        val send = Intent(Intent.ACTION_SEND)
+                            .setType("text/plain")
+                            .putExtra(Intent.EXTRA_STREAM, uri)
+                            .putExtra(Intent.EXTRA_SUBJECT, "Nova Clean report")
+                            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                        ctx.startActivity(Intent.createChooser(send, "Share report"))
+                    }
+                }) { Text("Share report") }
+                Button(onClick = {
+                    vm.prepareReport { _, text ->
+                        val cm = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                        cm.setPrimaryClip(ClipData.newPlainText("Nova Clean report", text))
+                        Toast.makeText(ctx, "Report copied. Paste it in Claude.", Toast.LENGTH_LONG).show()
+                    }
+                }) { Text("Copy report") }
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                TextButton(onClick = vm::clearCrashLog) { Text("Clear crash log") }
+                TextButton(onClick = vm::clearHistory) { Text("Clear history") }
             }
         }
 
-        Section("About") {
+        if (ui.settingsMsg.isNotEmpty()) {
+            Text(ui.settingsMsg, color = Amber, fontSize = 12.sp, modifier = Modifier.padding(vertical = 6.dp))
+        }
+
+        Section("9. About") {
             Text("Nova Clean", color = Color.White, fontWeight = FontWeight.Bold)
             Text("A.HAMROUNI", color = Grey, fontSize = 12.sp)
             Text(BuildConfig.BUILD_LABEL, color = Grey, fontSize = 9.sp)

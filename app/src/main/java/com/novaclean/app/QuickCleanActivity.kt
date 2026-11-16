@@ -26,8 +26,9 @@ class QuickCleanActivity : ComponentActivity() {
         lifecycleScope.launch {
             val text = try {
                 CleanJob(this@QuickCleanActivity).run().summary()
-            } catch (e: Exception) {
-                "Clean failed: ${e.message}"
+            } catch (e: Throwable) {
+                com.novaclean.app.core.CrashLog.logError(this@QuickCleanActivity, "widget clean", e)
+                "Clean failed and was saved to the log: ${e.message}"
             }
             if (prefs.toastResult) Toast.makeText(this@QuickCleanActivity, text, Toast.LENGTH_LONG).show()
             if (prefs.notifyResult) notifyResult(text)

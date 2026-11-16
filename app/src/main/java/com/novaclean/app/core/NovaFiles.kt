@@ -13,7 +13,7 @@ import java.util.Date
 import java.util.Locale
 
 /**
- * All Nova Clean data files live in  Download/NovaClean/  (Backups/ and history.txt).
+ * All Nova Clean data files live in  Download/NovaClean/  (Backups/, Logs/ and history.txt).
  * Android 10+ uses MediaStore (no permission needed); Android 7-9 writes the folder directly.
  */
 object NovaFiles {
@@ -30,21 +30,34 @@ object NovaFiles {
         false
     }
 
-    fun read(ctx: Context, sub: String, name: String): ByteArray? = try {
-        if (Build.VERSION.SDK_INT >= 29) {
-            findQ(ctx, sub, name)?.let { ctx.contentResolver.openInputStream(it)?.use { s -> s.readBytes() } }
-        } else {
-            File(legacyDir(sub), name).takeIf { it.exists() }?.readBytes()
+    fun delete(ctx: Context, sub: String, name: String) {
+        try {
+            if (Build.VERSION.SDK_INT >= 29) {
+                findQ(ctx, sub, name)?.let { ctx.contentResolver.delete(it, null, null) }
+            } else {
+                File(legacyDir(sub), name).delete()
+            }
+        } catch (e: Exception) {
         }
-    } catch (e: Exception) {
-        null
     }
+
+    // ---- history (private copy is the source of truth, Download copy is for the user) ----
+    fun historyFile(ctx: Context): File =
+        File(ctx.filesDir, "logs/history.txt").also { it.parentFile?.mkdirs() }
 
     fun appendHistory(ctx: Context, line: String) {
         val stamp = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date())
-        val old = read(ctx, "", HISTORY)?.toString(Charsets.UTF_8).orEmpty()
+        val f = historyFile(ctx)
+        val old = if (f.exists()) f.readText() else ""
         val lines = (old.lines().filter { it.isNotBlank() } + "$stamp | $line").takeLast(500)
-        write(ctx, "", HISTORY, (lines.joinToString("\n") + "\n").toByteArray(), "text/plain")
+        val body = lines.joinToString("\n") + "\n"
+        f.writeText(body)
+        write(ctx, "", HISTORY, body.toByteArray(), "text/plain")
+    }
+
+    fun clearHistory(ctx: Context) {
+        historyFile(ctx).delete()
+        delete(ctx, "", HISTORY)
     }
 
     // ---- Android 10+ ----

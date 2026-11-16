@@ -51,3 +51,10 @@ Scheduled auto-clean, in-app update from GitHub Releases, TV-first layout polish
   customised in Settings (what to close, caches, result message/notification, widget text).
 - **Permissions page:** battery (unrestricted), display over other apps, usage access, notifications, storage (Android 7-9),
   Shizuku, autostart page of the phone maker, app info page.
+
+## 1.2 — signing key (do once)
+
+Updates only install over each other when every build is signed with the same key.
+In the repo: Settings > Secrets and variables > Actions > New repository secret. Add four secrets:
+`KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`, `KEY_ALIAS` (= `novaclean`), `KEY_PASSWORD`. Keep a private backup of the key.
+The workflow refuses to publish an APK when `KEYSTORE_BASE64` is missing.

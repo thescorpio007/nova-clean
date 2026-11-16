@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.MaterialTheme
@@ -35,6 +36,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.novaclean.app.core.AppEntry
+import com.novaclean.app.core.UpdateScheduler
 import com.novaclean.app.core.Verdict
 
 class MainActivity : ComponentActivity() {
@@ -42,12 +44,18 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        try {
+            UpdateScheduler.apply(this)
+        } catch (t: Throwable) {
+            com.novaclean.app.core.CrashLog.logError(this, "schedule updates", t)
+        }
         setContent {
             MaterialTheme(colorScheme = darkColorScheme(primary = Mint, background = Bg, surface = Bg)) {
                 var settings by remember { mutableStateOf(false) }
                 BackHandler(enabled = settings) { settings = false }
                 if (settings) SettingsScreen(vm, onBack = { settings = false })
                 else MainScreen(vm, onSettings = { settings = true })
+                UpdateDialog(vm)
             }
         }
     }
@@ -55,6 +63,22 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         vm.refreshAll()
+    }
+}
+
+@Composable
+private fun UpdateDialog(vm: MainViewModel) {
+    val ui by vm.ui.collectAsStateWithLifecycle()
+    if (ui.updatePrompt && ui.updateReady.isNotEmpty()) {
+        AlertDialog(
+            onDismissRequest = vm::dismissUpdatePrompt,
+            title = { Text("Update ready") },
+            text = { Text("Nova Clean ${ui.updateReady} is downloaded and verified. Install now?") },
+            confirmButton = {
+                TextButton(onClick = { vm.dismissUpdatePrompt(); vm.installUpdate() }) { Text("Install") }
+            },
+            dismissButton = { TextButton(onClick = vm::dismissUpdatePrompt) { Text("Later") } },
+        )
     }
 }
 

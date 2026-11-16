@@ -10,14 +10,16 @@ class Prefs(ctx: Context) {
 
     private fun bool(k: String, d: Boolean) = sp.getBoolean(k, d)
     private fun put(k: String, v: Boolean) = sp.edit().putBoolean(k, v).apply()
+    private fun str(k: String, d: String = "") = sp.getString(k, d) ?: d
+    private fun putS(k: String, v: String) = sp.edit().putString(k, v).apply()
 
     var apiKey: String
-        get() = sp.getString("api_key", "") ?: ""
-        set(v) { sp.edit().putString("api_key", v.trim()).apply() }
+        get() = str("api_key")
+        set(v) = putS("api_key", v.trim())
 
     var model: String
-        get() = sp.getString("model", DEFAULT_MODEL) ?: DEFAULT_MODEL
-        set(v) { sp.edit().putString("model", v.trim().ifEmpty { DEFAULT_MODEL }).apply() }
+        get() = str("model", DEFAULT_MODEL)
+        set(v) = putS("model", v.trim().ifEmpty { DEFAULT_MODEL })
 
     var protectedPkgs: Set<String>
         get() = (sp.getStringSet("protected", emptySet()) ?: emptySet()).toSet()
@@ -34,8 +36,8 @@ class Prefs(ctx: Context) {
 
     /** MODE_AI_SAFE = close only what the AI marks SAFE. MODE_ALL = every unprotected app (no AI). */
     var mode: String
-        get() = sp.getString("mode", MODE_AI_SAFE) ?: MODE_AI_SAFE
-        set(v) { sp.edit().putString("mode", v).apply() }
+        get() = str("mode", MODE_AI_SAFE)
+        set(v) = putS("mode", v)
 
     var toastResult: Boolean
         get() = bool("toast", true)
@@ -54,8 +56,37 @@ class Prefs(ctx: Context) {
         set(v) { sp.edit().putInt("recent_min", v.coerceIn(1, 60)).apply() }
 
     var widgetLabel: String
-        get() = sp.getString("widget_label", "Clean now") ?: "Clean now"
-        set(v) { sp.edit().putString("widget_label", v.trim().ifEmpty { "Clean now" }.take(20)).apply() }
+        get() = str("widget_label", "Clean now")
+        set(v) = putS("widget_label", v.trim().ifEmpty { "Clean now" }.take(20))
+
+    // ---- Updates from GitHub ----
+    var autoUpdate: Boolean
+        get() = bool("auto_update", true)
+        set(v) = put("auto_update", v)
+
+    var updatePath: String
+        get() = str("upd_path")
+        set(v) = putS("upd_path", v)
+
+    var updateVer: String
+        get() = str("upd_ver")
+        set(v) = putS("upd_ver", v)
+
+    var updateBuild: Int
+        get() = sp.getInt("upd_build", 0)
+        set(v) { sp.edit().putInt("upd_build", v).apply() }
+
+    var notifiedUpdate: String
+        get() = str("upd_notified")
+        set(v) = putS("upd_notified", v)
+
+    var updateStatus: String
+        get() = str("upd_status")
+        set(v) = putS("upd_status", v)
+
+    var lastCheck: Long
+        get() = sp.getLong("upd_last", 0L)
+        set(v) { sp.edit().putLong("upd_last", v).apply() }
 
     // ---- Backup support ----
     fun export(includeKey: Boolean): JSONObject = JSONObject().apply {
@@ -70,6 +101,7 @@ class Prefs(ctx: Context) {
         put("keepHistory", keepHistory)
         put("recentProtectMin", recentProtectMin)
         put("widgetLabel", widgetLabel)
+        put("autoUpdate", autoUpdate)
     }
 
     fun import(o: JSONObject) {
@@ -87,6 +119,7 @@ class Prefs(ctx: Context) {
         if (o.has("keepHistory")) keepHistory = o.getBoolean("keepHistory")
         if (o.has("recentProtectMin")) recentProtectMin = o.getInt("recentProtectMin")
         if (o.has("widgetLabel")) widgetLabel = o.getString("widgetLabel")
+        if (o.has("autoUpdate")) autoUpdate = o.getBoolean("autoUpdate")
     }
 
     companion object {
