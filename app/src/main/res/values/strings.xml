@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">Nova Clean</string>
+    <string name="a11y_desc">Lets Nova Clean tap Android\'s own Force stop button for apps you selected. It never reads or stores screen content.</string>
+</resources>
