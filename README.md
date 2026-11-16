@@ -9,7 +9,6 @@ Signed **A.HAMROUNI**.
 |---|---|---|
 | Root (`su`) | none, only if the device already has root | force-stop, clear all caches, running-process list |
 | Shizuku / ADB | one-time, see below | force-stop, clear all caches (`pm trim-caches`), running-process list, foreground-service detection |
-| Accessibility | enable "Nova Clean" in Accessibility settings | force-stop (taps Android's own button), slower |
 | Basic | none | `killBackgroundProcesses` (background/cached processes only) |
 
 Optional: **Usage Access** gives a "recently used" list when no shell engine is available.

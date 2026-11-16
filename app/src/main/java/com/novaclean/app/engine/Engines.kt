@@ -80,26 +80,7 @@ class ShizukuEngine : ShellEngine() {
     }
 }
 
-/** 3) Accessibility: taps Android's own "Force stop" button. Works everywhere, slower. */
-class AccessibilityEngine : Engine {
-    override val id = "access"
-    override val title = "Accessibility automation"
-    override val canTrimCaches = false
-
-    override suspend fun status(): EngineStatus {
-        val on = NovaAccessibilityService.instance != null
-        return EngineStatus(
-            on,
-            if (on) "Ready (slower: taps Android's Force stop button)"
-            else "Enable Nova Clean in Accessibility settings"
-        )
-    }
-
-    override suspend fun forceStop(pkg: String): Boolean =
-        NovaAccessibilityService.instance?.forceStop(pkg) ?: false
-}
-
-/** 4) Basic: killBackgroundProcesses(). No setup. Only ends cached/background processes. */
+/** 3) Basic: killBackgroundProcesses(). No setup. Only ends cached/background processes. */
 class BasicEngine(private val ctx: Context) : Engine {
     override val id = "basic"
     override val title = "Basic (no setup)"
@@ -117,9 +98,8 @@ class BasicEngine(private val ctx: Context) : Engine {
 class EngineManager(ctx: Context) {
     val root = RootEngine()
     val shizuku = ShizukuEngine()
-    val access = AccessibilityEngine()
     val basic = BasicEngine(ctx.applicationContext)
-    val all: List<Engine> = listOf(root, shizuku, access, basic)
+    val all: List<Engine> = listOf(root, shizuku, basic)
 
     suspend fun statuses(): List<Pair<Engine, EngineStatus>> = all.map { it to it.status() }
 

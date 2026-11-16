@@ -110,7 +110,6 @@ fun NovaScreen(vm: MainViewModel) {
             TextButton(onClick = { ctx.openSafely(Settings.ACTION_USAGE_ACCESS_SETTINGS) }) {
                 Text(if (ui.usageAccess) "Usage access ✓" else "Usage access")
             }
-            TextButton(onClick = { ctx.openSafely(Settings.ACTION_ACCESSIBILITY_SETTINGS) }) { Text("Accessibility") }
             TextButton(onClick = vm::requestShizuku) { Text("Grant Shizuku") }
             TextButton(onClick = vm::refreshEngines) { Text("Refresh") }
             TextButton(onClick = { showSettings = true }) { Text(if (ui.hasKey) "Settings ✓" else "Settings (AI key)") }
