@@ -4,26 +4,60 @@ import com.novaclean.app.core.AppEntry
 import com.novaclean.app.core.Prefs
 import com.novaclean.app.core.Verdict
 import org.json.JSONArray
+import org.json.JSONException
 import org.json.JSONObject
+import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
 
-/** Gemini REST client with retry on busy/connection errors, then fallback to another model. */
+class AiHttpException(val code: Int, message: String) : RuntimeException(message)
+
+/** Gemini REST client: retry on busy/connection errors, then fall back to another model. */
 object GeminiClient {
     private const val BASE = "https://generativelanguage.googleapis.com/v1beta/models/"
 
-    fun generate(apiKey: String, model: String, prompt: String): String {
-        return try {
-            call(apiKey, model, prompt)
-        } catch (e: Exception) {
-            if (model == Prefs.FALLBACK_MODEL) throw e
-            call(apiKey, Prefs.FALLBACK_MODEL, prompt)
-        }
+    /** One-shot JSON answer (used by the app classifier). */
+    fun generate(
+        apiKey: String, model: String, prompt: String,
+        fallback: String? = Prefs.FALLBACK_MODEL, attempts: Int = 3,
+    ): String {
+        val body = JSONObject()
+            .put("contents", JSONArray().put(content("user", prompt)))
+            .put("generationConfig", JSONObject().put("responseMimeType", "application/json").put("temperature", 0.1))
+        return withFallback(apiKey, model, body, fallback, attempts)
     }
 
-    private fun call(apiKey: String, model: String, prompt: String): String {
-        var lastErr: Exception? = null
-        repeat(3) { attempt ->
+    /** Multi-turn conversation. turns = (role, text) with role "user" or "model". */
+    fun chat(
+        apiKey: String, model: String, system: String,
+        turns: List<Pair<String, String>>, fallback: String?,
+    ): String {
+        val contents = JSONArray()
+        turns.forEach { (role, text) -> contents.put(content(role, text)) }
+        val body = JSONObject()
+            .put("systemInstruction", JSONObject().put("parts", JSONArray().put(JSONObject().put("text", system))))
+            .put("contents", contents)
+            .put("generationConfig", JSONObject().put("responseMimeType", "application/json").put("temperature", 0.4))
+        return withFallback(apiKey, model, body, fallback, 3)
+    }
+
+    private fun content(role: String, text: String) =
+        JSONObject().put("role", role).put("parts", JSONArray().put(JSONObject().put("text", text)))
+
+    private fun withFallback(
+        apiKey: String, model: String, body: JSONObject, fallback: String?, attempts: Int,
+    ): String = try {
+        call(apiKey, model, body, attempts)
+    } catch (e: Exception) {
+        // 400-403 means the key/request is wrong, another model will not help. 404 = unknown model.
+        val authError = e is AiHttpException && e.code in 400..403
+        if (fallback == null || fallback == model || authError) throw e
+        call(apiKey, fallback, body, attempts)
+    }
+
+    private fun call(apiKey: String, model: String, body: JSONObject, attempts: Int): String {
+        var last: Exception? = null
+        for (attempt in 0 until attempts) {
             try {
                 val c = URL("$BASE$model:generateContent").openConnection() as HttpURLConnection
                 c.requestMethod = "POST"
@@ -32,36 +66,36 @@ object GeminiClient {
                 c.doOutput = true
                 c.setRequestProperty("Content-Type", "application/json")
                 c.setRequestProperty("x-goog-api-key", apiKey)
-                val body = JSONObject()
-                    .put("contents", JSONArray().put(JSONObject().put("parts",
-                        JSONArray().put(JSONObject().put("text", prompt)))))
-                    .put("generationConfig", JSONObject()
-                        .put("responseMimeType", "application/json")
-                        .put("temperature", 0.1))
                 c.outputStream.use { it.write(body.toString().toByteArray()) }
                 val code = c.responseCode
-                if (code == 429 || code == 503) throw RuntimeException("AI busy ($code)")
                 if (code !in 200..299) {
                     val err = c.errorStream?.bufferedReader()?.readText().orEmpty()
-                    throw IllegalStateException("AI error $code: ${err.take(200)}")
+                    throw AiHttpException(code, "AI error $code: ${err.take(200)}")
                 }
                 val txt = c.inputStream.bufferedReader().readText()
                 return JSONObject(txt).getJSONArray("candidates").getJSONObject(0)
                     .getJSONObject("content").getJSONArray("parts").getJSONObject(0)
                     .getString("text")
-            } catch (e: java.io.IOException) {
-                lastErr = RuntimeException("Connection problem. Check internet or VPN.", e)
-            } catch (e: RuntimeException) {
-                lastErr = e
-                if (e is IllegalStateException) throw e
+            } catch (e: AiHttpException) {
+                if (e.code != 429 && e.code != 503) throw e
+                last = e
+            } catch (e: IOException) {
+                last = RuntimeException("Connection problem. Check internet or VPN.", e)
+            } catch (e: JSONException) {
+                throw RuntimeException("Unexpected reply from the AI.", e)
             }
-            Thread.sleep(1500L * (attempt + 1))
+            if (attempt < attempts - 1) Thread.sleep(1500L * (attempt + 1))
         }
-        throw lastErr ?: RuntimeException("AI request failed")
+        throw last ?: RuntimeException("AI request failed")
     }
 }
 
-class AiClassifier(private val apiKey: String, private val model: String) {
+class AiClassifier(
+    private val apiKey: String,
+    private val model: String,
+    private val fallback: String? = Prefs.FALLBACK_MODEL,
+    private val attempts: Int = 3,
+) {
 
     /** Returns pkg -> (verdict, short reason). Only apps that already passed the hard protection list are sent. */
     fun classify(apps: List<AppEntry>, device: String): Map<String, Pair<Verdict, String>> {
@@ -90,7 +124,7 @@ Reply ONLY with a JSON array: [{"pkg":"...","verdict":"SAFE|CAUTION|NEVER","reas
 Apps: $arr
 """.trimIndent()
 
-        val text = GeminiClient.generate(apiKey, model, prompt)
+        val text = GeminiClient.generate(apiKey, model, prompt, fallback, attempts)
         val res = HashMap<String, Pair<Verdict, String>>()
         val allowed = chunk.map { it.pkg }.toSet()
         val json = JSONArray(text.trim().removePrefix("```json").removeSuffix("```").trim())

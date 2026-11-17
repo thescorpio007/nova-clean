@@ -21,6 +21,11 @@ class Prefs(ctx: Context) {
         get() = str("model", DEFAULT_MODEL)
         set(v) = putS("model", v.trim().ifEmpty { DEFAULT_MODEL })
 
+    /** Second-best model from "Check API & models", used when the main model is busy. */
+    var fallbackModel: String
+        get() = str("fallback_model", FALLBACK_MODEL)
+        set(v) = putS("fallback_model", v.trim().ifEmpty { FALLBACK_MODEL })
+
     var protectedPkgs: Set<String>
         get() = (sp.getStringSet("protected", emptySet()) ?: emptySet()).toSet()
         set(v) { sp.edit().putStringSet("protected", v).apply() }
@@ -92,6 +97,7 @@ class Prefs(ctx: Context) {
     fun export(includeKey: Boolean): JSONObject = JSONObject().apply {
         if (includeKey) put("apiKey", apiKey)
         put("model", model)
+        put("fallbackModel", fallbackModel)
         put("protected", JSONArray(protectedPkgs.toList()))
         put("closeApps", closeApps)
         put("cleanCaches", cleanCaches)
@@ -107,6 +113,7 @@ class Prefs(ctx: Context) {
     fun import(o: JSONObject) {
         if (o.has("apiKey")) apiKey = o.getString("apiKey")
         if (o.has("model")) model = o.getString("model")
+        if (o.has("fallbackModel")) fallbackModel = o.getString("fallbackModel")
         if (o.has("protected")) {
             val a = o.getJSONArray("protected")
             protectedPkgs = (0 until a.length()).map { a.getString(it) }.toSet()

@@ -13,14 +13,20 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.novaclean.app.ai.AiClassifier
+import com.novaclean.app.ai.AiHttpException
+import com.novaclean.app.ai.ChatAi
+import com.novaclean.app.ai.ModelTester
 import com.novaclean.app.core.AppEntry
 import com.novaclean.app.core.AppScanner
 import com.novaclean.app.core.Backup
+import com.novaclean.app.core.ChatMsg
+import com.novaclean.app.core.ChatStore
 import com.novaclean.app.core.CleanJob
 import com.novaclean.app.core.CrashLog
 import com.novaclean.app.core.NovaFiles
 import com.novaclean.app.core.Prefs
 import com.novaclean.app.core.Report
+import com.novaclean.app.core.SettingsApplier
 import com.novaclean.app.core.UpdateScheduler
 import com.novaclean.app.core.Updater
 import com.novaclean.app.core.Verdict
@@ -33,6 +39,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.json.JSONObject
 
 data class EngineRow(val title: String, val ready: Boolean, val hint: String)
 
@@ -74,6 +81,11 @@ data class UiState(
     val updateStatus: String = "",
     val updateReady: String = "",
     val updatePrompt: Boolean = false,
+    val models: List<ModelTester.Result> = emptyList(),
+    val bestModel: String = "",
+    val modelStatus: String = "",
+    val chat: List<ChatMsg> = emptyList(),
+    val chatBusy: Boolean = false,
 )
 
 class MainViewModel(private val app: Application) : AndroidViewModel(app) {
@@ -92,9 +104,10 @@ class MainViewModel(private val app: Application) : AndroidViewModel(app) {
                 updateStatus = prefs.updateStatus,
                 updateReady = ready ?: "",
                 updatePrompt = ready != null,
+                chat = ChatStore.load(app),
                 message = if (CrashLog.consumeCrashFlag(app))
                     "Nova Clean closed unexpectedly last time. The crash was saved. " +
-                        "Settings → 8 → Share report sends it for analysis."
+                        "Settings → 7 → Share report sends it for analysis."
                 else it.message,
             )
         }
@@ -170,7 +183,7 @@ class MainViewModel(private val app: Application) : AndroidViewModel(app) {
             } catch (t: Throwable) {
                 CrashLog.logError(app, msg, t)
                 _ui.update {
-                    it.copy(message = "Something went wrong and was saved to the log (Settings → 8). ${t.message ?: ""}")
+                    it.copy(message = "Something went wrong and was saved to the log (Settings → 7). ${t.message ?: ""}")
                 }
             } finally {
                 _ui.update { it.copy(busy = null) }
@@ -220,7 +233,7 @@ class MainViewModel(private val app: Application) : AndroidViewModel(app) {
             return@launchBusy
         }
         val res = withContext(Dispatchers.IO) {
-            AiClassifier(prefs.apiKey, prefs.model).classify(cands, CleanJob.deviceInfo(app))
+            AiClassifier(prefs.apiKey, prefs.model, prefs.fallbackModel).classify(cands, CleanJob.deviceInfo(app))
         }
         _ui.update { st ->
             st.copy(
@@ -282,6 +295,123 @@ class MainViewModel(private val app: Application) : AndroidViewModel(app) {
                 message = "Closed $ok of ${sel.size} using ${eng.title}.",
             )
         }
+    }
+
+    // ---------- API check and model test (same procedure as Nova Enhance) ----------
+    fun checkApi() = launchBusy("Checking API…") {
+        val key = prefs.apiKey
+        if (key.isBlank()) {
+            _ui.update { it.copy(modelStatus = "Enter and save your API key first.") }
+            return@launchBusy
+        }
+        _ui.update { it.copy(models = emptyList(), bestModel = "", modelStatus = "Reading the model list…") }
+        val names = try {
+            withContext(Dispatchers.IO) { ModelTester.list(key) }
+        } catch (e: AiHttpException) {
+            val why = if (e.code == 400 || e.code == 401 || e.code == 403)
+                "The API key was rejected (HTTP ${e.code}). Check it with Get API key."
+            else "Google answered HTTP ${e.code}. Try again later."
+            _ui.update { it.copy(modelStatus = why) }
+            return@launchBusy
+        } catch (e: Exception) {
+            _ui.update { it.copy(modelStatus = "Could not reach Google. Check internet or VPN.") }
+            return@launchBusy
+        }
+        if (names.isEmpty()) {
+            _ui.update { it.copy(modelStatus = "The key works but no usable Gemini text model was listed.") }
+            return@launchBusy
+        }
+        val results = mutableListOf<ModelTester.Result>()
+        for ((i, n) in names.withIndex()) {
+            _ui.update { it.copy(busy = "Testing $n (${i + 1}/${names.size})…") }
+            results += withContext(Dispatchers.IO) { ModelTester.test(key, n) }
+            _ui.update { it.copy(models = results.toList()) }
+        }
+        val (best, second) = ModelTester.pickBest(results)
+        if (best == null) {
+            _ui.update { it.copy(modelStatus = "The key is valid but no model passed the test (quota or busy). Try again later.") }
+        } else {
+            prefs.model = best.model
+            if (second != null) prefs.fallbackModel = second.model
+            val okCount = results.count { it.ok && it.score > 0 }
+            _ui.update {
+                it.copy(
+                    cfg = readCfg(), bestModel = best.model,
+                    modelStatus = "Key OK. $okCount of ${results.size} models available. " +
+                        "Selected ${best.model} (score ${best.score}/10, ${best.ms} ms)" +
+                        (second?.let { s -> "; backup ${s.model}" } ?: "") + ".",
+                )
+            }
+        }
+    }
+
+    fun useModel(name: String) {
+        prefs.model = name
+        _ui.update { it.copy(cfg = readCfg(), modelStatus = "Model set to $name.") }
+    }
+
+    // ---------- AI chat ----------
+    private fun setChat(list: List<ChatMsg>, busy: Boolean) {
+        ChatStore.save(app, list)
+        _ui.update { it.copy(chat = list, chatBusy = busy) }
+    }
+
+    fun newChat() = setChat(emptyList(), false)
+
+    fun sendChat(text: String) {
+        val t = text.trim()
+        if (t.isEmpty() || _ui.value.chatBusy) return
+        if (prefs.apiKey.isBlank()) {
+            setChat(_ui.value.chat + ChatMsg("sys", "Add your Gemini API key in Settings → 1 first."), false)
+            return
+        }
+        val msgs = _ui.value.chat + ChatMsg("user", t)
+        setChat(msgs, true)
+        viewModelScope.launch {
+            CrashLog.action = "ai chat"
+            val turns = msgs.filter { it.role == "user" || it.role == "ai" }.takeLast(24)
+                .map { (if (it.role == "user") "user" else "model") to it.text }
+            val lines = _ui.value.engines.map { "${if (it.ready) "●" else "○"} ${it.title} — ${it.hint}" }
+            val reply = try {
+                withContext(Dispatchers.IO) {
+                    val system = ChatAi.systemPrompt(app, prefs, lines)
+                    ChatAi.ask(prefs.apiKey, prefs.model, prefs.fallbackModel, system, turns)
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Throwable) {
+                CrashLog.logError(app, "ai chat", e)
+                null
+            }
+            val aiMsg = if (reply == null) {
+                ChatMsg("sys", "The AI request failed (saved to the log). Check the key and model in Settings → 1 (Check API & models).")
+            } else {
+                val applied = reply.changes?.let { SettingsApplier.apply(prefs, it) }
+                if (applied != null) {
+                    CleanWidget.updateAll(app)
+                    UpdateScheduler.apply(app)
+                }
+                ChatMsg("ai", reply.text, applied?.summary ?: "", applied?.undo ?: "")
+            }
+            _ui.update { it.copy(cfg = readCfg()) }
+            setChat(_ui.value.chat + aiMsg, false)
+            CrashLog.action = "idle"
+        }
+    }
+
+    fun undoChat(index: Int) {
+        val m = _ui.value.chat.getOrNull(index) ?: return
+        if (m.undo.isEmpty() || m.undone) return
+        try {
+            prefs.import(JSONObject(m.undo))
+            CleanWidget.updateAll(app)
+            UpdateScheduler.apply(app)
+        } catch (t: Throwable) {
+            CrashLog.logError(app, "undo chat change", t)
+        }
+        val list = _ui.value.chat.mapIndexed { i, x -> if (i == index) x.copy(undone = true) else x }
+        _ui.update { it.copy(cfg = readCfg()) }
+        setChat(list, _ui.value.chatBusy)
     }
 
     // ---------- Backup / restore ----------

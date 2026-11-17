@@ -51,10 +51,13 @@ class MainActivity : ComponentActivity() {
         }
         setContent {
             MaterialTheme(colorScheme = darkColorScheme(primary = Mint, background = Bg, surface = Bg)) {
-                var settings by remember { mutableStateOf(false) }
-                BackHandler(enabled = settings) { settings = false }
-                if (settings) SettingsScreen(vm, onBack = { settings = false })
-                else MainScreen(vm, onSettings = { settings = true })
+                var screen by remember { mutableStateOf("main") }
+                BackHandler(enabled = screen != "main") { screen = "main" }
+                when (screen) {
+                    "settings" -> SettingsScreen(vm, onBack = { screen = "main" })
+                    "chat" -> ChatScreen(vm, onBack = { screen = "main" })
+                    else -> MainScreen(vm, onSettings = { screen = "settings" }, onChat = { screen = "chat" })
+                }
                 UpdateDialog(vm)
             }
         }
@@ -83,7 +86,7 @@ private fun UpdateDialog(vm: MainViewModel) {
 }
 
 @Composable
-fun MainScreen(vm: MainViewModel, onSettings: () -> Unit) {
+fun MainScreen(vm: MainViewModel, onSettings: () -> Unit, onChat: () -> Unit) {
     val ui by vm.ui.collectAsStateWithLifecycle()
     val idle = ui.busy == null
 
@@ -93,6 +96,7 @@ fun MainScreen(vm: MainViewModel, onSettings: () -> Unit) {
                 Text("Nova Clean", color = Color.White, fontSize = 26.sp, fontWeight = FontWeight.Bold)
                 Text("Engine: ${ui.activeEngine}", color = Mint, fontSize = 12.sp)
             }
+            TextButton(onClick = onChat) { Text("💬 Chat") }
             TextButton(onClick = onSettings) { Text("⚙ Settings") }
         }
 

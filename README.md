@@ -58,3 +58,8 @@ Updates only install over each other when every build is signed with the same ke
 In the repo: Settings > Secrets and variables > Actions > New repository secret. Add four secrets:
 `KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`, `KEY_ALIAS` (= `novaclean`), `KEY_PASSWORD`. Keep a private backup of the key.
 The workflow refuses to publish an APK when `KEYSTORE_BASE64` is missing.
+
+## 1.3
+- Settings → 1: **Check API & models** lists the models your key can use, tests each (score 1-10, speed), and selects the fastest good one (plus a backup model).
+- **💬 Chat** button beside Settings: talk freely with the AI; once you agree, it changes the app settings (with Undo).
+- Updates moved to the bottom of Settings (section 9).

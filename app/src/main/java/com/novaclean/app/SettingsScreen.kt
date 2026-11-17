@@ -88,6 +88,24 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit) {
             }
             Text("Get API key opens Google AI Studio. Sign in, tap Create API key, copy it, come back and paste it above.",
                 color = Grey, fontSize = 11.sp, modifier = Modifier.padding(top = 4.dp))
+
+            Button(onClick = vm::checkApi, enabled = ui.busy == null,
+                modifier = Modifier.padding(top = 8.dp)) { Text("Check API & models") }
+            Text("Tests every model your key can use with a small fixed sample, scores each 1-10, " +
+                "and selects the fastest one within 1 point of the best score.",
+                color = Grey, fontSize = 11.sp, modifier = Modifier.padding(top = 4.dp))
+            if (ui.modelStatus.isNotEmpty()) {
+                Text(ui.modelStatus, color = Amber, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp))
+            }
+            ui.models.forEach { r ->
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    val star = if (r.model == ui.bestModel) "★ " else ""
+                    val line = if (r.ok) "$star${r.model} — ${r.score}/10 · ${r.ms} ms" else "✗ ${r.model} — ${r.note}"
+                    Text(line, fontSize = 12.sp, modifier = Modifier.weight(1f),
+                        color = if (r.ok) (if (r.model == cfg.model) Mint else Color.White) else Grey)
+                    if (r.ok && r.model != cfg.model) TextButton(onClick = { vm.useModel(r.model) }) { Text("Use") }
+                }
+            }
         }
 
         // ---------------- 2 ----------------
@@ -191,25 +209,7 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit) {
         }
 
         // ---------------- 6 ----------------
-        Section("6. Updates (GitHub)") {
-            SwitchRow("Check every 6 hours and download silently", cfg.autoUpdate) { v -> vm.update { autoUpdate = v } }
-            Text("Current: ${BuildConfig.BUILD_LABEL}", color = Color.White, fontSize = 12.sp,
-                modifier = Modifier.padding(top = 4.dp))
-            if (ui.updateStatus.isNotEmpty()) {
-                Text(ui.updateStatus, color = Amber, fontSize = 12.sp, modifier = Modifier.padding(top = 2.dp))
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 6.dp)) {
-                Button(onClick = vm::checkUpdates, enabled = ui.busy == null) { Text("Check now") }
-                if (ui.updateReady.isNotEmpty()) {
-                    Button(onClick = vm::installUpdate) { Text("Install ${ui.updateReady}") }
-                }
-            }
-            Text("Updates come from github.com/thescorpio007/nova-clean and are verified with SHA-256 before install.",
-                color = Grey, fontSize = 11.sp, modifier = Modifier.padding(top = 4.dp))
-        }
-
-        // ---------------- 7 ----------------
-        Section("7. Backup & restore (local)") {
+        Section("6. Backup & restore (local)") {
             var pass by remember { mutableStateOf("") }
             Text("Files are kept in ${NovaFiles.FOLDER}: Backups/, Logs/ and ${NovaFiles.HISTORY}.",
                 color = Grey, fontSize = 12.sp)
@@ -224,8 +224,8 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit) {
             }
         }
 
-        // ---------------- 8 ----------------
-        Section("8. Logs & crash reports") {
+        // ---------------- 7 ----------------
+        Section("7. Logs & crash reports") {
             Text("Every crash and error is saved with device information in " +
                 "${NovaFiles.pathOf("Logs")}/crash-log.txt. The report adds settings and clean history in one text file " +
                 "you can attach in Claude.", color = Grey, fontSize = 12.sp)
@@ -258,11 +258,30 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit) {
             Text(ui.settingsMsg, color = Amber, fontSize = 12.sp, modifier = Modifier.padding(vertical = 6.dp))
         }
 
-        Section("9. About") {
+        Section("8. About") {
             Text("Nova Clean", color = Color.White, fontWeight = FontWeight.Bold)
             Text("A.HAMROUNI", color = Grey, fontSize = 12.sp)
             Text(BuildConfig.BUILD_LABEL, color = Grey, fontSize = 9.sp)
         }
+
+        // ---------------- 9 (bottom) ----------------
+        Section("9. Updates (GitHub)") {
+            SwitchRow("Check every 6 hours and download silently", cfg.autoUpdate) { v -> vm.update { autoUpdate = v } }
+            Text("Current: ${BuildConfig.BUILD_LABEL}", color = Color.White, fontSize = 12.sp,
+                modifier = Modifier.padding(top = 4.dp))
+            if (ui.updateStatus.isNotEmpty()) {
+                Text(ui.updateStatus, color = Amber, fontSize = 12.sp, modifier = Modifier.padding(top = 2.dp))
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 6.dp)) {
+                Button(onClick = vm::checkUpdates, enabled = ui.busy == null) { Text("Check now") }
+                if (ui.updateReady.isNotEmpty()) {
+                    Button(onClick = vm::installUpdate) { Text("Install ${ui.updateReady}") }
+                }
+            }
+            Text("Updates come from github.com/thescorpio007/nova-clean and are verified with SHA-256 before install.",
+                color = Grey, fontSize = 11.sp, modifier = Modifier.padding(top = 4.dp))
+        }
+
     }
 
     if (ui.needPassword) {

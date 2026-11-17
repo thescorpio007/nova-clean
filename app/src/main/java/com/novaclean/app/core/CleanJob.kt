@@ -59,7 +59,7 @@ class CleanJob(private val ctx: Context) {
                     onStep("Asking AI…")
                     val res = try {
                         withContext(Dispatchers.IO) {
-                            AiClassifier(prefs.apiKey, prefs.model).classify(targets, deviceInfo(ctx))
+                            AiClassifier(prefs.apiKey, prefs.model, prefs.fallbackModel).classify(targets, deviceInfo(ctx))
                         }
                     } catch (e: Exception) {
                         CrashLog.logError(ctx, "AI classify", e)
