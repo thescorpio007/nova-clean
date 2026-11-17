@@ -66,3 +66,6 @@ The workflow refuses to publish an APK when `KEYSTORE_BASE64` is missing.
 
 ## 1.4
 - Always-visible scroll bars (home, chat, settings), Paste button for the API key, remote-friendly text boxes (OK/Enter to edit), key is cleaned of spaces and the real Google error is shown.
+
+## 2.0
+- Select all / Unselect all (unprotected apps only), caches of all apps cleared after Close selected (needs Shizuku/root), Explore system apps option (AI assesses, you approve; core components locked), Backup/Restore no longer lockable, Cancel button and time limits, results under the buttons. Build number increases with every build.

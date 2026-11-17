@@ -111,7 +111,8 @@ class AiClassifier(
                 .put("pkg", it.pkg)
                 .put("name", it.label)
                 .put("last_used_min_ago", it.lastUsedMinAgo ?: JSONObject.NULL)
-                .put("has_live_process", it.running))
+                .put("has_live_process", it.running)
+                .put("system_app", it.system))
         }
         val prompt = """
 You help free memory on an Android device ($device) by force-stopping background apps WITHOUT harming the device.
@@ -119,6 +120,7 @@ For each app decide:
 - SAFE: ordinary user app that restarts on demand; nothing is lost except unsaved state.
 - CAUTION: could be a media player/recorder, VPN, remote-control or air-mouse helper, sync/backup, smart-home, alarm/reminder, banking/2FA, or a service other apps rely on.
 - NEVER: core device function, launcher, keyboard, security, driver/firmware/remote helper, connectivity or accessibility.
+Apps with system_app=true are preinstalled by the device maker: choose SAFE only for clearly non-essential extras (bloatware, optional vendor helpers, ads, analytics, promo); remote/air-mouse/driver/service helpers are NEVER or CAUTION.
 Judge only by package name and app name. When unsure choose CAUTION.
 Reply ONLY with a JSON array: [{"pkg":"...","verdict":"SAFE|CAUTION|NEVER","reason":"max 10 words"}]
 Apps: $arr

@@ -67,6 +67,13 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit) {
             Text("Settings", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
         }
 
+        if (ui.busy != null) {
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 4.dp)) {
+                Text("⏳ ${ui.busy}", color = Amber, fontSize = 13.sp, modifier = Modifier.weight(1f))
+                TextButton(onClick = vm::cancelBusy) { Text("Cancel") }
+            }
+        }
+
         // ---------------- 1 ----------------
         Section("1. AI (Gemini)") {
             var key by remember(cfg.apiKey) { mutableStateOf(cfg.apiKey) }
@@ -148,6 +155,12 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit) {
 
         // ---------------- 3 ----------------
         Section("3. Protected apps (never closed)") {
+            SwitchRow("Explore system apps in Scan (AI assesses them, you approve)", cfg.exploreSystem) { v ->
+                vm.update { exploreSystem = v }
+            }
+            Text("Core Android, launcher, keyboard, phone, Bluetooth, Wi-Fi, security and remote helpers stay locked. " +
+                "System apps are never touched by Clean now, only by Scan → Ask AI → Close selected after you review.",
+                color = Grey, fontSize = 11.sp, modifier = Modifier.padding(bottom = 6.dp))
             if (cfg.protectedPkgs.isEmpty()) {
                 Text("None yet. Tap Protect next to an app on the main screen.", color = Grey, fontSize = 12.sp)
             }
@@ -227,8 +240,11 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit) {
             Text("With a password the backup is encrypted and includes your API key. Without one, the key is left out.",
                 color = Grey, fontSize = 11.sp, modifier = Modifier.padding(vertical = 4.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = { vm.backup(pass) }, enabled = ui.busy == null) { Text("Back up now") }
-                Button(onClick = { restorePicker.launch(arrayOf("*/*")) }, enabled = ui.busy == null) { Text("Restore…") }
+                Button(onClick = { vm.backup(pass) }, enabled = !ui.backupBusy) { Text("Back up now") }
+                Button(onClick = { restorePicker.launch(arrayOf("*/*")) }, enabled = !ui.backupBusy) { Text("Restore…") }
+            }
+            if (ui.backupMsg.isNotEmpty()) {
+                Text(ui.backupMsg, color = Amber, fontSize = 12.sp, modifier = Modifier.padding(top = 6.dp))
             }
         }
 

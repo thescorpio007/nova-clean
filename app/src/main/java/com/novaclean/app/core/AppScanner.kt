@@ -33,6 +33,7 @@ class AppScanner(private val ctx: Context) {
         foregroundServices: Set<String>,
         userProtected: Set<String>,
         recentMin: Int = 3,
+        exploreSystem: Boolean = false,
     ): List<AppEntry> {
         val pm = ctx.packageManager
         val now = System.currentTimeMillis()
@@ -43,14 +44,14 @@ class AppScanner(private val ctx: Context) {
         val out = ArrayList<AppEntry>()
         for (ai in pm.getInstalledApplications(0)) {
             val pkg = ai.packageName
-            if (prot.isHidden(pkg, ai)) continue
+            if (prot.isHidden(pkg, ai, exploreSystem)) continue
 
             val lu = used[pkg]
+            val sys = prot.isSystem(ai)
             val candidate = when {
                 running != null -> pkg in running
                 used.isNotEmpty() -> lu != null && lu > 0 && now - lu < DAY
-                else -> (ai.flags and ApplicationInfo.FLAG_SYSTEM) == 0 ||
-                    (ai.flags and ApplicationInfo.FLAG_UPDATED_SYSTEM_APP) != 0
+                else -> !sys || exploreSystem
             }
             if (!candidate) continue
 
@@ -59,7 +60,8 @@ class AppScanner(private val ctx: Context) {
                 label = pm.getApplicationLabel(ai).toString(),
                 lastUsedMinAgo = if (lu != null && lu > 0) (now - lu) / 60_000L else null,
                 running = running?.contains(pkg) ?: false,
-                protectedReason = prot.reason(pkg),
+                protectedReason = prot.reason(pkg) ?: prot.coreSystemReason(pkg, sys),
+                system = sys,
             )
         }
         return out.sortedWith(

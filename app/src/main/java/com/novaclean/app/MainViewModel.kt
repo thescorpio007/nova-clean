@@ -32,6 +32,9 @@ import com.novaclean.app.core.Updater
 import com.novaclean.app.core.Verdict
 import com.novaclean.app.engine.EngineManager
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -65,6 +68,7 @@ data class Cfg(
     val recentMin: Int = 3,
     val widgetLabel: String = "Clean now",
     val autoUpdate: Boolean = true,
+    val exploreSystem: Boolean = false,
     val protectedPkgs: List<String> = emptyList(),
 )
 
@@ -77,6 +81,8 @@ data class UiState(
     val perms: Perms = Perms(),
     val cfg: Cfg = Cfg(),
     val settingsMsg: String = "",
+    val backupMsg: String = "",
+    val backupBusy: Boolean = false,
     val needPassword: Boolean = false,
     val updateStatus: String = "",
     val updateReady: String = "",
@@ -119,7 +125,7 @@ class MainViewModel(private val app: Application) : AndroidViewModel(app) {
         closeApps = prefs.closeApps, cleanCaches = prefs.cleanCaches,
         toast = prefs.toastResult, notify = prefs.notifyResult, history = prefs.keepHistory,
         recentMin = prefs.recentProtectMin, widgetLabel = prefs.widgetLabel,
-        autoUpdate = prefs.autoUpdate, protectedPkgs = prefs.protectedPkgs.sorted(),
+        autoUpdate = prefs.autoUpdate, exploreSystem = prefs.exploreSystem, protectedPkgs = prefs.protectedPkgs.sorted(),
     )
 
     private fun readPerms(shizukuReady: Boolean): Perms {
@@ -172,14 +178,24 @@ class MainViewModel(private val app: Application) : AndroidViewModel(app) {
     }
 
     /** Every action runs inside this wrapper: a failure is logged and shown, never a crash. */
+    private var busyJob: Job? = null
+
+    /** Stops whatever is running now (used by the Cancel button). */
+    fun cancelBusy() {
+        busyJob?.cancel()
+    }
+
     private fun launchBusy(msg: String, block: suspend () -> Unit) {
-        viewModelScope.launch {
+        busyJob = viewModelScope.launch {
             CrashLog.action = msg
             _ui.update { it.copy(busy = msg) }
             try {
-                block()
+                withTimeout(10 * 60_000L) { block() }
+            } catch (e: TimeoutCancellationException) {
+                CrashLog.logError(app, msg, e)
+                _ui.update { it.copy(message = "“$msg” took too long and was stopped.") }
             } catch (e: CancellationException) {
-                throw e
+                _ui.update { it.copy(message = "Cancelled.") }
             } catch (t: Throwable) {
                 CrashLog.logError(app, msg, t)
                 _ui.update {
@@ -205,7 +221,7 @@ class MainViewModel(private val app: Application) : AndroidViewModel(app) {
         val fg = shell?.let { s -> CrashLog.guard(app, "foreground services") { s.foregroundServicePackages() } }
             ?: emptySet()
         val list = withContext(Dispatchers.Default) {
-            scanner.scan(running, fg, prefs.protectedPkgs, prefs.recentProtectMin)
+            scanner.scan(running, fg, prefs.protectedPkgs, prefs.recentProtectMin, prefs.exploreSystem)
         }
         val tip = when {
             shell == null && !scanner.hasUsageAccess() ->
@@ -258,6 +274,11 @@ class MainViewModel(private val app: Application) : AndroidViewModel(app) {
         st.copy(apps = st.apps.map { if (it.pkg == pkg && !it.isProtected) it.copy(selected = !it.selected) else it })
     }
 
+    /** Tick or untick every app that is not protected (protected and locked apps never change). */
+    fun selectAll(on: Boolean) = _ui.update { st ->
+        st.copy(apps = st.apps.map { if (it.isProtected) it else it.copy(selected = on) })
+    }
+
     fun protect(pkg: String) {
         prefs.protectedPkgs = prefs.protectedPkgs + pkg
         _ui.update { st ->
@@ -289,10 +310,21 @@ class MainViewModel(private val app: Application) : AndroidViewModel(app) {
             CrashLog.guard(app, "background-kill ${a.pkg}") { engines.basic.forceStop(a.pkg) }
         }
         val closed = sel.map { it.pkg }.toSet()
+        var cacheNote = ""
+        if (prefs.cleanCaches) {
+            val shell = engines.bestShell()
+            if (shell == null) {
+                cacheNote = " Cache clean for all apps needs Shizuku or root."
+            } else {
+                _ui.update { it.copy(busy = "Clearing caches of all apps…") }
+                val c = CrashLog.guard(app, "trim caches") { shell.trimCaches() } == true
+                cacheNote = if (c) " Caches of all apps cleared." else " Cache clean failed."
+            }
+        }
         _ui.update { st ->
             st.copy(
                 apps = st.apps.filter { it.pkg !in closed },
-                message = "Closed $ok of ${sel.size} using ${eng.title}.",
+                message = "Closed $ok of ${sel.size} using ${eng.title}.$cacheNote",
             )
         }
     }
@@ -415,22 +447,38 @@ class MainViewModel(private val app: Application) : AndroidViewModel(app) {
     }
 
     // ---------- Backup / restore ----------
-    fun backup(password: String) = launchBusy("Saving backup…") {
-        val r = withContext(Dispatchers.IO) { Backup.create(app, prefs, password) }
-        _ui.update { it.copy(settingsMsg = r.message) }
+    private fun backupRun(msg: String, block: suspend () -> Unit) {
+        viewModelScope.launch {
+            _ui.update { it.copy(backupBusy = true, backupMsg = msg) }
+            try {
+                withTimeout(60_000L) { block() }
+            } catch (e: TimeoutCancellationException) {
+                _ui.update { it.copy(backupMsg = "Took too long and was stopped. Try again.") }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (t: Throwable) {
+                CrashLog.logError(app, "backup/restore", t)
+                _ui.update { it.copy(backupMsg = "Failed: ${t.message ?: t.javaClass.simpleName}") }
+            } finally {
+                _ui.update { it.copy(backupBusy = false) }
+            }
+        }
     }
 
-    fun restoreFrom(uri: Uri) = launchBusy("Reading backup…") {
+    fun backup(password: String) = backupRun("Saving backup…") {
+        val r = withContext(Dispatchers.IO) { Backup.create(app, prefs, password) }
+        _ui.update { it.copy(backupMsg = (if (r.ok) "✓ " else "✗ ") + r.message) }
+    }
+
+    fun restoreFrom(uri: Uri) = backupRun("Reading backup…") {
         val bytes = withContext(Dispatchers.IO) {
             app.contentResolver.openInputStream(uri)?.use { it.readBytes() }
         }
         if (bytes == null) {
-            _ui.update { it.copy(settingsMsg = "Could not open that file.") }
-            return@launchBusy
-        }
-        if (Backup.isEncrypted(bytes)) {
+            _ui.update { it.copy(backupMsg = "✗ Could not open that file.") }
+        } else if (Backup.isEncrypted(bytes)) {
             pendingRestore = bytes
-            _ui.update { it.copy(needPassword = true) }
+            _ui.update { it.copy(needPassword = true, backupMsg = "Enter the backup password.") }
         } else {
             applyRestore(bytes, "")
         }
@@ -454,7 +502,7 @@ class MainViewModel(private val app: Application) : AndroidViewModel(app) {
         if (r.ok) pendingRestore = null
         CleanWidget.updateAll(app)
         UpdateScheduler.apply(app)
-        _ui.update { it.copy(settingsMsg = r.message, cfg = readCfg()) }
+        _ui.update { it.copy(backupMsg = (if (r.ok) "✓ " else "✗ ") + r.message, cfg = readCfg()) }
     }
 
     // ---------- Updates ----------

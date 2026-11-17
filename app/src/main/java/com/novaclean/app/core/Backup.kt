@@ -68,7 +68,7 @@ object Backup {
             true,
             "Backup saved: ${NovaFiles.pathOf(NovaFiles.BACKUPS)}/$name" +
                 if (encrypt) " (password protected, includes API key)" else " (no password: API key NOT included)"
-        ) else Outcome(false, "Could not write to ${NovaFiles.pathOf(NovaFiles.BACKUPS)}. Grant storage access in Settings.")
+        ) else Outcome(false, "Could not write to ${NovaFiles.pathOf(NovaFiles.BACKUPS)} (${NovaFiles.lastError}). Grant storage access in Settings → 4.")
     }
 
     fun isEncrypted(bytes: ByteArray): Boolean =

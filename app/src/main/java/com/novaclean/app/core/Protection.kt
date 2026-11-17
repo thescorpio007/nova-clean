@@ -65,8 +65,23 @@ class Protection(
             (ai.flags and ApplicationInfo.FLAG_UPDATED_SYSTEM_APP) == 0
 
     /** True = do not even show this app in the list (core Android / vendor system). */
-    fun isHidden(pkg: String, ai: ApplicationInfo): Boolean =
-        pkg !in dynamic && (matchesHardPrefix(pkg) || isPureSystem(ai))
+    fun isHidden(pkg: String, ai: ApplicationInfo, exploreSystem: Boolean = false): Boolean =
+        if (exploreSystem) false else pkg !in dynamic && (matchesHardPrefix(pkg) || isPureSystem(ai))
+
+    fun isSystem(ai: ApplicationInfo) = isPureSystem(ai)
+
+    private val coreWords = listOf(
+        "launcher", "systemui", "settings", "provider", "telephony", "telecom", "dialer", "phone",
+        "bluetooth", "nfc", "wifi", "inputmethod", "keyboard", "ims", "setupwizard", "packageinstaller",
+        "permission", "webview", "security", "mediatek", "qualcomm", "framework", "overlay", "remote",
+        "bootstrap", "backup", "certinstaller", "networkstack", "location", "sim", "cellbroadcast",
+    )
+
+    /** Extra lock for system apps: anything that looks like a core component can never be closed. */
+    fun coreSystemReason(pkg: String, system: Boolean): String? =
+        if (matchesHardPrefix(pkg)) "Core Android / Google (locked)"
+        else if (system && coreWords.any { pkg.lowercase().contains(it) }) "Core system component (locked)"
+        else null
 
     /** Non-null = the app is shown greyed out and can never be closed. */
     fun reason(pkg: String): String? {

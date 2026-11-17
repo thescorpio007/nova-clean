@@ -11,6 +11,7 @@ data class AppEntry(
     val verdict: Verdict = Verdict.UNKNOWN,
     val aiReason: String = "",
     val selected: Boolean = false,
+    val system: Boolean = false,
 ) {
     val isProtected: Boolean get() = protectedReason != null
 }

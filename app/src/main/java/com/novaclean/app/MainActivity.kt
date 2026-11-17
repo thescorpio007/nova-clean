@@ -20,6 +20,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.darkColorScheme
@@ -117,6 +118,12 @@ fun MainScreen(vm: MainViewModel, onSettings: () -> Unit, onChat: () -> Unit) {
             fontSize = 13.sp, modifier = Modifier.padding(vertical = 8.dp),
         )
 
+        if (ui.apps.isNotEmpty()) {
+            Row(Modifier.fillMaxWidth().padding(bottom = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(onClick = { vm.selectAll(true) }, enabled = idle, modifier = Modifier.weight(1f)) { Text("☑ Select all") }
+                OutlinedButton(onClick = { vm.selectAll(false) }, enabled = idle, modifier = Modifier.weight(1f)) { Text("☐ Unselect all") }
+            }
+        }
         val listState = androidx.compose.foundation.lazy.rememberLazyListState()
         LazyColumn(Modifier.weight(1f).vScrollbar(listState), state = listState) {
             items(ui.apps, key = { it.pkg }) { a ->
@@ -150,7 +157,7 @@ private fun AppRow(a: AppEntry, onToggle: () -> Unit, onProtect: () -> Unit) {
         Checkbox(checked = a.selected, onCheckedChange = { onToggle() }, enabled = !a.isProtected)
         Column(Modifier.weight(1f)) {
             Text(a.label, color = if (a.isProtected) Grey else Color.White, fontWeight = FontWeight.Bold)
-            Text(a.pkg, color = Grey, fontSize = 11.sp)
+            Text(if (a.system) "${a.pkg}  ·  SYSTEM" else a.pkg, color = Grey, fontSize = 11.sp)
             if (line.isNotEmpty()) Text(line, color = color, fontSize = 12.sp)
         }
         if (!a.isProtected) TextButton(onClick = onProtect) { Text("Protect") }

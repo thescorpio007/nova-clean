@@ -64,6 +64,11 @@ class Prefs(ctx: Context) {
         get() = str("widget_label", "Clean now")
         set(v) = putS("widget_label", v.trim().ifEmpty { "Clean now" }.take(20))
 
+    /** Show system apps in Scan so the AI can assess them. The user approves every closing. */
+    var exploreSystem: Boolean
+        get() = bool("explore_system", false)
+        set(v) = put("explore_system", v)
+
     // ---- Updates from GitHub ----
     var autoUpdate: Boolean
         get() = bool("auto_update", true)
@@ -98,6 +103,7 @@ class Prefs(ctx: Context) {
         if (includeKey) put("apiKey", apiKey)
         put("model", model)
         put("fallbackModel", fallbackModel)
+        put("exploreSystem", exploreSystem)
         put("protected", JSONArray(protectedPkgs.toList()))
         put("closeApps", closeApps)
         put("cleanCaches", cleanCaches)
@@ -114,6 +120,7 @@ class Prefs(ctx: Context) {
         if (o.has("apiKey")) apiKey = o.getString("apiKey")
         if (o.has("model")) model = o.getString("model")
         if (o.has("fallbackModel")) fallbackModel = o.getString("fallbackModel")
+        if (o.has("exploreSystem")) exploreSystem = o.getBoolean("exploreSystem")
         if (o.has("protected")) {
             val a = o.getJSONArray("protected")
             protectedPkgs = (0 until a.length()).map { a.getString(it) }.toSet()

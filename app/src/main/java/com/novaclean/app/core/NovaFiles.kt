@@ -27,8 +27,11 @@ object NovaFiles {
         if (Build.VERSION.SDK_INT >= 29) writeQ(ctx, sub, name, bytes, mime) else writeLegacy(sub, name, bytes)
         true
     } catch (e: Exception) {
+        lastError = e.message ?: e.javaClass.simpleName
         false
     }
+
+    @Volatile var lastError: String = ""
 
     fun delete(ctx: Context, sub: String, name: String) {
         try {
