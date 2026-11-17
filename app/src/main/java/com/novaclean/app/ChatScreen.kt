@@ -59,7 +59,7 @@ fun ChatScreen(vm: MainViewModel, onBack: () -> Unit) {
             )
         }
 
-        LazyColumn(Modifier.weight(1f).fillMaxWidth(), state = listState,
+        LazyColumn(Modifier.weight(1f).fillMaxWidth().vScrollbar(listState), state = listState,
             verticalArrangement = Arrangement.spacedBy(8.dp)) {
             itemsIndexed(ui.chat) { i, m -> Bubble(m, onUndo = { vm.undoChat(i) }) }
             if (ui.chatBusy) {

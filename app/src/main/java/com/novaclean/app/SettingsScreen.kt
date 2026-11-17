@@ -60,7 +60,8 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit) {
         vm.refreshAll()
     }
 
-    Column(Modifier.fillMaxSize().background(Bg).verticalScroll(rememberScrollState()).padding(16.dp)) {
+    val scroll = rememberScrollState()
+    Column(Modifier.fillMaxSize().background(Bg).vScrollbar(scroll).verticalScroll(scroll).padding(16.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             TextButton(onClick = onBack) { Text("← Back") }
             Text("Settings", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
@@ -70,13 +71,18 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit) {
         Section("1. AI (Gemini)") {
             var key by remember(cfg.apiKey) { mutableStateOf(cfg.apiKey) }
             var model by remember(cfg.model) { mutableStateOf(cfg.model) }
-            OutlinedTextField(key, { key = it }, label = { Text("API key") }, singleLine = true,
-                visualTransformation = PasswordVisualTransformation(), modifier = Modifier.fillMaxWidth())
-            OutlinedTextField(model, { model = it }, label = { Text("Model") }, singleLine = true,
-                modifier = Modifier.fillMaxWidth())
+            RemoteTextField(key, { key = it }, "API key", Modifier.fillMaxWidth(), password = true)
+            RemoteTextField(model, { model = it }, "Model", Modifier.fillMaxWidth())
             Text("Only package names, app names and last-used times are sent. No personal data.",
                 color = Grey, fontSize = 11.sp, modifier = Modifier.padding(vertical = 4.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(onClick = {
+                    val cm = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                    val t = cm.primaryClip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.coerceToText(ctx)?.toString().orEmpty()
+                    if (t.isBlank()) Toast.makeText(ctx, "Clipboard is empty", Toast.LENGTH_SHORT).show()
+                    else { key = t.filter { !it.isWhitespace() && it != '"' && it != '\'' }
+                        Toast.makeText(ctx, "Pasted. Tap Save.", Toast.LENGTH_SHORT).show() }
+                }) { Text("Paste") }
                 Button(onClick = { vm.update { apiKey = key; this.model = model } }) { Text("Save") }
                 Button(onClick = {
                     // Chrome first, then any browser
@@ -89,7 +95,11 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit) {
             Text("Get API key opens Google AI Studio. Sign in, tap Create API key, copy it, come back and paste it above.",
                 color = Grey, fontSize = 11.sp, modifier = Modifier.padding(top = 4.dp))
 
-            Button(onClick = vm::checkApi, enabled = ui.busy == null,
+            Button(onClick = {
+                // always test what is typed in the box, saved first
+                vm.update { apiKey = key; this.model = model }
+                vm.checkApi()
+            }, enabled = ui.busy == null,
                 modifier = Modifier.padding(top = 8.dp)) { Text("Check API & models") }
             Text("Tests every model your key can use with a small fixed sample, scores each 1-10, " +
                 "and selects the fastest one within 1 point of the best score.",
@@ -129,8 +139,7 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit) {
                 TextButton(onClick = { vm.update { recentProtectMin = cfg.recentMin + 1 } }) { Text("+") }
             }
             var label by remember(cfg.widgetLabel) { mutableStateOf(cfg.widgetLabel) }
-            OutlinedTextField(label, { label = it }, label = { Text("Widget button text") },
-                singleLine = true, modifier = Modifier.fillMaxWidth().padding(top = 6.dp))
+            RemoteTextField(label, { label = it }, "Widget button text", Modifier.fillMaxWidth().padding(top = 6.dp))
             Button(onClick = { vm.update { widgetLabel = label } }) { Text("Save widget text") }
             Text("Add the Nova Clean widget from your home screen's widget list. " +
                 "Long-press the app icon for a Clean now shortcut. TV boxes: use the Clean now button.",
@@ -213,9 +222,8 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit) {
             var pass by remember { mutableStateOf("") }
             Text("Files are kept in ${NovaFiles.FOLDER}: Backups/, Logs/ and ${NovaFiles.HISTORY}.",
                 color = Grey, fontSize = 12.sp)
-            OutlinedTextField(pass, { pass = it }, label = { Text("Backup password (optional)") },
-                singleLine = true, visualTransformation = PasswordVisualTransformation(),
-                modifier = Modifier.fillMaxWidth().padding(top = 6.dp))
+            RemoteTextField(pass, { pass = it }, "Backup password (optional)",
+                Modifier.fillMaxWidth().padding(top = 6.dp), password = true)
             Text("With a password the backup is encrypted and includes your API key. Without one, the key is left out.",
                 color = Grey, fontSize = 11.sp, modifier = Modifier.padding(vertical = 4.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

@@ -309,8 +309,8 @@ class MainViewModel(private val app: Application) : AndroidViewModel(app) {
             withContext(Dispatchers.IO) { ModelTester.list(key) }
         } catch (e: AiHttpException) {
             val why = if (e.code == 400 || e.code == 401 || e.code == 403)
-                "The API key was rejected (HTTP ${e.code}). Check it with Get API key."
-            else "Google answered HTTP ${e.code}. Try again later."
+                "The API key was rejected (HTTP ${e.code}): ${e.message}. Use Paste, then Save, and make sure the key starts with AIza."
+            else "Google answered HTTP ${e.code}: ${e.message}"
             _ui.update { it.copy(modelStatus = why) }
             return@launchBusy
         } catch (e: Exception) {

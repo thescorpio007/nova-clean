@@ -63,3 +63,6 @@ The workflow refuses to publish an APK when `KEYSTORE_BASE64` is missing.
 - Settings → 1: **Check API & models** lists the models your key can use, tests each (score 1-10, speed), and selects the fastest good one (plus a backup model).
 - **💬 Chat** button beside Settings: talk freely with the AI; once you agree, it changes the app settings (with Undo).
 - Updates moved to the bottom of Settings (section 9).
+
+## 1.4
+- Always-visible scroll bars (home, chat, settings), Paste button for the API key, remote-friendly text boxes (OK/Enter to edit), key is cleaned of spaces and the real Google error is shown.

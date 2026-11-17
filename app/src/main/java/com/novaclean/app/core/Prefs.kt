@@ -15,7 +15,7 @@ class Prefs(ctx: Context) {
 
     var apiKey: String
         get() = str("api_key")
-        set(v) = putS("api_key", v.trim())
+        set(v) = putS("api_key", v.filter { !it.isWhitespace() && it != '"' })
 
     var model: String
         get() = str("model", DEFAULT_MODEL)

@@ -117,7 +117,8 @@ fun MainScreen(vm: MainViewModel, onSettings: () -> Unit, onChat: () -> Unit) {
             fontSize = 13.sp, modifier = Modifier.padding(vertical = 8.dp),
         )
 
-        LazyColumn(Modifier.weight(1f)) {
+        val listState = androidx.compose.foundation.lazy.rememberLazyListState()
+        LazyColumn(Modifier.weight(1f).vScrollbar(listState), state = listState) {
             items(ui.apps, key = { it.pkg }) { a ->
                 AppRow(a, onToggle = { vm.toggle(a.pkg) }, onProtect = { vm.protect(a.pkg) })
             }

@@ -54,7 +54,11 @@ object ModelTester {
             c.readTimeout = 30_000
             c.setRequestProperty("x-goog-api-key", apiKey)
             val code = c.responseCode
-            if (code !in 200..299) throw AiHttpException(code, "HTTP $code")
+            if (code !in 200..299) {
+                val body = c.errorStream?.bufferedReader()?.readText().orEmpty()
+                val msg = runCatching { JSONObject(body).getJSONObject("error").getString("message") }.getOrDefault(body)
+                throw AiHttpException(code, msg.take(160))
+            }
             val o = JSONObject(c.inputStream.bufferedReader().readText())
             val arr = o.optJSONArray("models") ?: JSONArray()
             for (i in 0 until arr.length()) {
