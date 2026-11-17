@@ -236,6 +236,12 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit) {
                 Text("Not granted yet. Tap Nova Clean Recents above, find Nova Clean Recents in the list, and turn it on.",
                     color = Amber, fontSize = 11.sp, modifier = Modifier.padding(bottom = 4.dp))
             }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 4.dp, bottom = 4.dp)) {
+                Button(onClick = vm::testRecents, enabled = !ui.recentsTesting) { Text("Test Clear Recents now") }
+            }
+            if (ui.recentsTestMsg.isNotEmpty()) {
+                Text(ui.recentsTestMsg, color = Amber, fontSize = 11.sp, modifier = Modifier.padding(bottom = 6.dp))
+            }
             Text("Android 13+ may hide the toggle at first: open Nova Clean's app info, tap the ⋮ menu, " +
                 "choose Allow restricted settings, then try again.",
                 color = Grey, fontSize = 11.sp, modifier = Modifier.padding(bottom = 6.dp))

@@ -85,6 +85,8 @@ data class UiState(
     val settingsMsg: String = "",
     val backupMsg: String = "",
     val backupBusy: Boolean = false,
+    val recentsTestMsg: String = "",
+    val recentsTesting: Boolean = false,
     val needPassword: Boolean = false,
     val updateStatus: String = "",
     val updateReady: String = "",
@@ -171,6 +173,26 @@ class MainViewModel(private val app: Application) : AndroidViewModel(app) {
     }
 
     fun requestShizuku() = engines.shizuku.requestPermission()
+
+    /** Lets the user try Nova Clean Recents by itself, without running a full clean. */
+    fun testRecents() {
+        if (!com.novaclean.app.core.RecentsService.isEnabled(app)) {
+            _ui.update { it.copy(recentsTestMsg = "Not granted yet. Tap Nova Clean Recents above and turn it on first.") }
+            return
+        }
+        viewModelScope.launch {
+            _ui.update { it.copy(recentsTesting = true, recentsTestMsg = "Opening Recents...") }
+            val ok = com.novaclean.app.core.RecentsService.clearRecents(app)
+            _ui.update {
+                it.copy(
+                    recentsTesting = false,
+                    recentsTestMsg = if (ok) "Worked: Clear all was tapped." else
+                        "Could not find Clear all on this screen. Open Recents yourself to see its exact layout, " +
+                            "and send a screenshot so this can be improved for your phone.",
+                )
+            }
+        }
+    }
 
     /** Change any setting: vm.update { closeApps = true } */
     fun update(block: Prefs.() -> Unit) {
