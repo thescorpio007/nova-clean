@@ -89,6 +89,8 @@ private fun UpdateDialog(vm: MainViewModel) {
 @Composable
 fun MainScreen(vm: MainViewModel, onSettings: () -> Unit, onChat: () -> Unit) {
     val ui by vm.ui.collectAsStateWithLifecycle()
+    var pending by remember { mutableStateOf<AppEntry?>(null) }
+    pending?.let { a -> UnprotectDialog(a, onConfirm = { vm.unlock(a.pkg); pending = null }, onDismiss = { pending = null }) }
     val idle = ui.busy == null
 
     Column(Modifier.fillMaxSize().background(Bg).padding(16.dp)) {
@@ -113,6 +115,11 @@ fun MainScreen(vm: MainViewModel, onSettings: () -> Unit, onChat: () -> Unit) {
         }
 
         Text(
+            "Clean now closes background apps of all users' apps and system apps (except protected ones) " +
+                "and clears the caches of all apps.",
+            color = Grey, fontSize = 11.sp, modifier = Modifier.padding(top = 6.dp),
+        )
+        Text(
             ui.busy ?: ui.message,
             color = if (ui.busy != null) Amber else Grey,
             fontSize = 13.sp, modifier = Modifier.padding(vertical = 8.dp),
@@ -127,7 +134,7 @@ fun MainScreen(vm: MainViewModel, onSettings: () -> Unit, onChat: () -> Unit) {
         val listState = androidx.compose.foundation.lazy.rememberLazyListState()
         LazyColumn(Modifier.weight(1f).vScrollbar(listState), state = listState) {
             items(ui.apps, key = { it.pkg }) { a ->
-                AppRow(a, onToggle = { vm.toggle(a.pkg) }, onProtect = { vm.protect(a.pkg) })
+                AppRow(a, onToggle = { vm.toggle(a.pkg) }, onProtect = { vm.protect(a.pkg) }, onUnprotect = { pending = a })
             }
         }
 
@@ -137,7 +144,7 @@ fun MainScreen(vm: MainViewModel, onSettings: () -> Unit, onChat: () -> Unit) {
 }
 
 @Composable
-private fun AppRow(a: AppEntry, onToggle: () -> Unit, onProtect: () -> Unit) {
+private fun AppRow(a: AppEntry, onToggle: () -> Unit, onProtect: () -> Unit, onUnprotect: () -> Unit) {
     val line = when {
         a.isProtected -> "🔒 ${a.protectedReason}"
         a.verdict != Verdict.UNKNOWN -> "${a.verdict.name}: ${a.aiReason}"
@@ -159,7 +166,10 @@ private fun AppRow(a: AppEntry, onToggle: () -> Unit, onProtect: () -> Unit) {
             Text(a.label, color = if (a.isProtected) Grey else Color.White, fontWeight = FontWeight.Bold)
             Text(if (a.system) "${a.pkg}  ·  SYSTEM" else a.pkg, color = Grey, fontSize = 11.sp)
             if (line.isNotEmpty()) Text(line, color = color, fontSize = 12.sp)
+            if (a.note.isNotEmpty()) Text(a.note, color = Amber, fontSize = 11.sp)
+            if (a.unlocked) Text("Unprotected by you", color = Amber, fontSize = 11.sp)
         }
         if (!a.isProtected) TextButton(onClick = onProtect) { Text("Protect") }
+        else if (a.pkg != "com.novaclean.app") TextButton(onClick = onUnprotect) { Text("Unprotect") }
     }
 }

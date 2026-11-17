@@ -34,6 +34,7 @@ class AppScanner(private val ctx: Context) {
         userProtected: Set<String>,
         recentMin: Int = 3,
         exploreSystem: Boolean = false,
+        unlocked: Set<String> = emptySet(),
     ): List<AppEntry> {
         val pm = ctx.packageManager
         val now = System.currentTimeMillis()
@@ -51,17 +52,20 @@ class AppScanner(private val ctx: Context) {
             val candidate = when {
                 running != null -> pkg in running
                 used.isNotEmpty() -> lu != null && lu > 0 && now - lu < DAY
-                else -> !sys || exploreSystem
+                else -> !sys
             }
             if (!candidate) continue
 
+            val isUnlocked = pkg in unlocked && pkg != ctx.packageName
             out += AppEntry(
                 pkg = pkg,
                 label = pm.getApplicationLabel(ai).toString(),
                 lastUsedMinAgo = if (lu != null && lu > 0) (now - lu) / 60_000L else null,
                 running = running?.contains(pkg) ?: false,
-                protectedReason = prot.reason(pkg) ?: prot.coreSystemReason(pkg, sys),
+                protectedReason = if (isUnlocked) null else prot.reason(pkg) ?: prot.coreSystemReason(pkg, sys),
                 system = sys,
+                unlocked = isUnlocked,
+                note = if (prot.isVpn(pkg)) "VPN app: closing it disconnects the VPN. You decide." else "",
             )
         }
         return out.sortedWith(

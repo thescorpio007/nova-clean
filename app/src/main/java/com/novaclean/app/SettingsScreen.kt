@@ -154,17 +154,33 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit) {
         }
 
         // ---------------- 3 ----------------
+        var unprotectAsk by remember { mutableStateOf<com.novaclean.app.core.AppEntry?>(null) }
+        unprotectAsk?.let { a -> UnprotectDialog(a, onConfirm = { vm.unlock(a.pkg); unprotectAsk = null }, onDismiss = { unprotectAsk = null }) }
         Section("3. Protected apps (never closed)") {
             SwitchRow("Explore system apps in Scan (AI assesses them, you approve)", cfg.exploreSystem) { v ->
                 vm.update { exploreSystem = v }
             }
-            Text("Core Android, launcher, keyboard, phone, Bluetooth, Wi-Fi, security and remote helpers stay locked. " +
-                "System apps are never touched by Clean now, only by Scan → Ask AI → Close selected after you review.",
+            Text("Core Android, launcher, keyboard, phone, Bluetooth, Wi-Fi, security and remote helpers are locked by default. " +
+                "Clean now also includes system apps that pass the locks and that the AI marks SAFE. " +
+                "This switch only adds them to the manual Scan list.",
                 color = Grey, fontSize = 11.sp, modifier = Modifier.padding(bottom = 6.dp))
             if (cfg.protectedPkgs.isEmpty()) {
                 Text("None yet. Tap Protect next to an app on the main screen.", color = Grey, fontSize = 12.sp)
             }
-            cfg.protectedPkgs.forEach { pkg ->
+            Text("Manage every lock: change any app, even ones the AI said NEVER or that are locked automatically, " +
+                "after a warning. Press Scan on the home screen (and turn Explore on for system apps) to list them here.",
+                color = Grey, fontSize = 11.sp, modifier = Modifier.padding(bottom = 4.dp))
+            ui.apps.filter { it.isProtected || it.unlocked }.forEach { a ->
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text(a.label, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                        Text(if (a.unlocked) "Unprotected by you" else "🔒 ${a.protectedReason}", color = if (a.unlocked) Amber else Grey, fontSize = 11.sp)
+                    }
+                    if (a.unlocked) TextButton(onClick = { vm.protect(a.pkg) }) { Text("Protect") }
+                    else if (a.pkg != "com.novaclean.app") TextButton(onClick = { unprotectAsk = a }) { Text("Unprotect") }
+                }
+            }
+            cfg.protectedPkgs.filter { p -> ui.apps.none { it.pkg == p } }.forEach { pkg ->
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(pkg, color = Color.White, fontSize = 12.sp, modifier = Modifier.weight(1f))
                     TextButton(onClick = { vm.unprotect(pkg) }) { Text("Remove") }

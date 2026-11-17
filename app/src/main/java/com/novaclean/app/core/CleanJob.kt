@@ -46,7 +46,7 @@ class CleanJob(private val ctx: Context) {
             val fg = shell?.let { s -> CrashLog.guard(ctx, "foreground services") { s.foregroundServicePackages() } }
                 ?: emptySet()
             val apps = withContext(Dispatchers.Default) {
-                scanner.scan(running, fg, prefs.protectedPkgs, prefs.recentProtectMin)
+                scanner.scan(running, fg, prefs.protectedPkgs, prefs.recentProtectMin, exploreSystem = true, unlocked = prefs.unlockedPkgs)
             }
             var targets = apps.filter { !it.isProtected }
             cands = targets.size
@@ -69,7 +69,7 @@ class CleanJob(private val ctx: Context) {
                         notes += "AI unavailable: nothing was closed."
                         targets = emptyList()
                     } else {
-                        targets = targets.filter { res[it.pkg]?.first == Verdict.SAFE }
+                        targets = targets.filter { res[it.pkg]?.first == Verdict.SAFE || it.pkg in prefs.unlockedPkgs }
                     }
                 }
             }

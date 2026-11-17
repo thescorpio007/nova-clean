@@ -30,6 +30,11 @@ class Prefs(ctx: Context) {
         get() = (sp.getStringSet("protected", emptySet()) ?: emptySet()).toSet()
         set(v) { sp.edit().putStringSet("protected", v).apply() }
 
+    /** Apps the user deliberately unprotected (overrides automatic locks and AI NEVER verdicts). */
+    var unlockedPkgs: Set<String>
+        get() = (sp.getStringSet("unlocked", emptySet()) ?: emptySet()).toSet()
+        set(v) { sp.edit().putStringSet("unlocked", v).apply() }
+
     // ---- One-tap clean (Clean now button, widget, launcher shortcut) ----
     var closeApps: Boolean
         get() = bool("close_apps", true)
@@ -105,6 +110,7 @@ class Prefs(ctx: Context) {
         put("fallbackModel", fallbackModel)
         put("exploreSystem", exploreSystem)
         put("protected", JSONArray(protectedPkgs.toList()))
+        put("unlocked", JSONArray(unlockedPkgs.toList()))
         put("closeApps", closeApps)
         put("cleanCaches", cleanCaches)
         put("mode", mode)
@@ -124,6 +130,9 @@ class Prefs(ctx: Context) {
         if (o.has("protected")) {
             val a = o.getJSONArray("protected")
             protectedPkgs = (0 until a.length()).map { a.getString(it) }.toSet()
+        }
+        o.optJSONArray("unlocked")?.let { u ->
+            unlockedPkgs = (0 until u.length()).map { u.getString(it) }.toSet()
         }
         if (o.has("closeApps")) closeApps = o.getBoolean("closeApps")
         if (o.has("cleanCaches")) cleanCaches = o.getBoolean("cleanCaches")

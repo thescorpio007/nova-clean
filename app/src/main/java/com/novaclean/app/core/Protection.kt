@@ -89,11 +89,10 @@ class Protection(
         dynamic[pkg]?.let { return it }
         if (pkg in foregroundServices) return "Running a foreground service (playing / recording)"
         if (pkg in recentlyUsed) return "Used very recently"
-        if (isVpn(pkg)) return "VPN app"
         return null
     }
 
-    private fun isVpn(pkg: String): Boolean = try {
+    fun isVpn(pkg: String): Boolean = try {
         pm.getPackageInfo(pkg, PackageManager.GET_SERVICES).services
             ?.any { it.permission == "android.permission.BIND_VPN_SERVICE" } == true
     } catch (e: Exception) {

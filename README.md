@@ -69,3 +69,5 @@ The workflow refuses to publish an APK when `KEYSTORE_BASE64` is missing.
 
 ## 2.0
 - Select all / Unselect all (unprotected apps only), caches of all apps cleared after Close selected (needs Shizuku/root), Explore system apps option (AI assesses, you approve; core components locked), Backup/Restore no longer lockable, Cancel button and time limits, results under the buttons. Build number increases with every build.
+
+- 2.0: VPN apps are no longer auto-locked (you decide), per-app Unprotect with warning (also in Settings → 3), Clean now includes system apps that pass the locks and are AI-SAFE.

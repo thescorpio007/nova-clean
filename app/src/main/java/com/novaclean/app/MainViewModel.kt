@@ -221,7 +221,7 @@ class MainViewModel(private val app: Application) : AndroidViewModel(app) {
         val fg = shell?.let { s -> CrashLog.guard(app, "foreground services") { s.foregroundServicePackages() } }
             ?: emptySet()
         val list = withContext(Dispatchers.Default) {
-            scanner.scan(running, fg, prefs.protectedPkgs, prefs.recentProtectMin, prefs.exploreSystem)
+            scanner.scan(running, fg, prefs.protectedPkgs, prefs.recentProtectMin, prefs.exploreSystem, prefs.unlockedPkgs)
         }
         val tip = when {
             shell == null && !scanner.hasUsageAccess() ->
@@ -256,7 +256,7 @@ class MainViewModel(private val app: Application) : AndroidViewModel(app) {
                 apps = st.apps.map { a ->
                     val r = res[a.pkg]
                     if (a.isProtected || r == null) return@map a
-                    if (r.first == Verdict.NEVER) {
+                    if (r.first == Verdict.NEVER && !a.unlocked) {
                         a.copy(
                             verdict = r.first, aiReason = r.second,
                             protectedReason = "AI: never close (${r.second})", selected = false,
@@ -279,13 +279,29 @@ class MainViewModel(private val app: Application) : AndroidViewModel(app) {
         st.copy(apps = st.apps.map { if (it.isProtected) it else it.copy(selected = on) })
     }
 
+    /** The user knowingly removes any lock (automatic, AI or own) from an app. Nova Clean itself stays locked. */
+    fun unlock(pkg: String) {
+        if (pkg == app.packageName) return
+        prefs.protectedPkgs = prefs.protectedPkgs - pkg
+        prefs.unlockedPkgs = prefs.unlockedPkgs + pkg
+        _ui.update { st ->
+            st.copy(
+                cfg = readCfg(),
+                apps = st.apps.map {
+                    if (it.pkg == pkg) it.copy(protectedReason = null, unlocked = true, selected = false) else it
+                },
+            )
+        }
+    }
+
     fun protect(pkg: String) {
+        prefs.unlockedPkgs = prefs.unlockedPkgs - pkg
         prefs.protectedPkgs = prefs.protectedPkgs + pkg
         _ui.update { st ->
             st.copy(
                 cfg = readCfg(),
                 apps = st.apps.map {
-                    if (it.pkg == pkg) it.copy(protectedReason = "Protected by you", selected = false) else it
+                    if (it.pkg == pkg) it.copy(protectedReason = "Protected by you", unlocked = false, selected = false) else it
                 },
             )
         }

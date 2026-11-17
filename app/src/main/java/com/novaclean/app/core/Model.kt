@@ -12,6 +12,8 @@ data class AppEntry(
     val aiReason: String = "",
     val selected: Boolean = false,
     val system: Boolean = false,
+    val note: String = "",
+    val unlocked: Boolean = false,
 ) {
     val isProtected: Boolean get() = protectedReason != null
 }

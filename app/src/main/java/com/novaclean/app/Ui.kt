@@ -8,6 +8,7 @@ import android.net.Uri
 import android.provider.Settings
 import android.widget.Toast
 import androidx.compose.foundation.ScrollState
+import com.novaclean.app.core.AppEntry
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -179,4 +180,25 @@ fun RemoteTextField(
             Box(Modifier.matchParentSize().pointerInput(Unit) { detectTapGestures { editing = true } })
         }
     }
+}
+
+
+/** Warning shown before any lock is removed. */
+@Composable
+fun UnprotectDialog(a: AppEntry, onConfirm: () -> Unit, onDismiss: () -> Unit) {
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("⚠ Unprotect ${a.label}?", color = Red) },
+        text = {
+            Text(
+                "${a.label} is locked: ${a.protectedReason ?: "it is currently unprotected"}.\n\n" +
+                    "If you unprotect it, Close selected and Clean now may force-stop it, " +
+                    (if (a.system) "and as a system app this can break calls, remotes, the home screen or other device functions " +
+                        "until it restarts or you reboot. " else "and you may lose unsaved data or a running service. ") +
+                    "Only continue if you are sure. You can protect it again any time."
+            )
+        },
+        confirmButton = { androidx.compose.material3.TextButton(onClick = onConfirm) { Text("Unprotect anyway", color = Red) } },
+        dismissButton = { androidx.compose.material3.TextButton(onClick = onDismiss) { Text("Keep protected") } },
+    )
 }
