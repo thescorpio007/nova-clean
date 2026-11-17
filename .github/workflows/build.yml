@@ -12,7 +12,7 @@ env:
   # Bump VERSION_NAME for a new version and set BUILD_OFFSET to (current run number - 1)
   # so the displayed build number restarts at 01.
   VERSION_NAME: "2.0"
-  BUILD_OFFSET: "9"
+  BUILD_OFFSET: "7"
 
 jobs:
   build:
