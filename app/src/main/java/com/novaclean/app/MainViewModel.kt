@@ -54,6 +54,7 @@ data class Perms(
     val storage: Boolean = true,
     val install: Boolean = true,
     val shizuku: Boolean = false,
+    val recents: Boolean = false,
 )
 
 data class Cfg(
@@ -69,6 +70,7 @@ data class Cfg(
     val widgetLabel: String = "Clean now",
     val autoUpdate: Boolean = true,
     val exploreSystem: Boolean = false,
+    val clearRecents: Boolean = false,
     val protectedPkgs: List<String> = emptyList(),
 )
 
@@ -125,7 +127,7 @@ class MainViewModel(private val app: Application) : AndroidViewModel(app) {
         closeApps = prefs.closeApps, cleanCaches = prefs.cleanCaches,
         toast = prefs.toastResult, notify = prefs.notifyResult, history = prefs.keepHistory,
         recentMin = prefs.recentProtectMin, widgetLabel = prefs.widgetLabel,
-        autoUpdate = prefs.autoUpdate, exploreSystem = prefs.exploreSystem, protectedPkgs = prefs.protectedPkgs.sorted(),
+        autoUpdate = prefs.autoUpdate, exploreSystem = prefs.exploreSystem, clearRecents = prefs.clearRecents, protectedPkgs = prefs.protectedPkgs.sorted(),
     )
 
     private fun readPerms(shizukuReady: Boolean): Perms {
@@ -141,6 +143,7 @@ class MainViewModel(private val app: Application) : AndroidViewModel(app) {
             overlay = Settings.canDrawOverlays(app),
             usage = scanner.hasUsageAccess(),
             notif = notif, storage = storage, install = install, shizuku = shizukuReady,
+            recents = com.novaclean.app.core.RecentsService.isEnabled(app),
         )
     }
 
@@ -337,10 +340,20 @@ class MainViewModel(private val app: Application) : AndroidViewModel(app) {
                 cacheNote = if (c) " Caches of all apps cleared." else " Cache clean failed."
             }
         }
+        var recentsNote = ""
+        if (prefs.clearRecents) {
+            if (!com.novaclean.app.core.RecentsService.isEnabled(app)) {
+                recentsNote = " Clear Recents is on but not granted (Settings -> 4)."
+            } else {
+                _ui.update { it.copy(busy = "Clearing Recents...") }
+                val done = com.novaclean.app.core.RecentsService.clearRecents(app)
+                recentsNote = if (done) " Recents cleared." else " Could not find Clear all."
+            }
+        }
         _ui.update { st ->
             st.copy(
                 apps = st.apps.filter { it.pkg !in closed },
-                message = "Closed $ok of ${sel.size} using ${eng.title}.$cacheNote",
+                message = "Closed $ok of ${sel.size} using ${eng.title}.$cacheNote$recentsNote",
             )
         }
     }

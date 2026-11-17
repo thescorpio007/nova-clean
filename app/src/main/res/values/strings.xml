@@ -1,5 +1,6 @@
 <resources>
     <string name="app_name">Nova Clean</string>
+    <string name="recents_service_desc">Nova Clean Recents: opens the Recents screen and taps Clear all after a clean. Reads no other app content.</string>
     <string name="clean_now">Clean now</string>
     <string name="widget_desc">One button: close background apps and clear caches</string>
 </resources>

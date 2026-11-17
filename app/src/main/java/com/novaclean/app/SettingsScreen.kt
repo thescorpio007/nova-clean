@@ -226,6 +226,19 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit) {
             PermRow("Shizuku", "Lets Nova Clean force-stop apps and clear all caches without root.", p.shizuku) {
                 vm.requestShizuku()
             }
+            PermRow("Nova Clean Recents (optional)", "Lets Clean now open Recents and tap Clear all. Reads nothing from other apps.", p.recents) {
+                ctx.launchFirst(
+                    Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS),
+                )
+            }
+            SwitchRow("Clear Recents after cleaning", cfg.clearRecents) { v -> vm.update { clearRecents = v } }
+            if (cfg.clearRecents && !p.recents) {
+                Text("Not granted yet. Tap Nova Clean Recents above, find Nova Clean Recents in the list, and turn it on.",
+                    color = Amber, fontSize = 11.sp, modifier = Modifier.padding(bottom = 4.dp))
+            }
+            Text("Android 13+ may hide the toggle at first: open Nova Clean's app info, tap the ⋮ menu, " +
+                "choose Allow restricted settings, then try again.",
+                color = Grey, fontSize = 11.sp, modifier = Modifier.padding(bottom = 6.dp))
             PermRow("Autostart / background", "Allow Nova Clean to auto-start and run in the background (phone maker's page).", null) {
                 ctx.openAutostart()
             }

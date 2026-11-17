@@ -91,6 +91,16 @@ class CleanJob(private val ctx: Context) {
             }
         }
 
+        if (prefs.clearRecents) {
+            if (!RecentsService.isEnabled(ctx)) {
+                notes += "Clear Recents is on but the accessibility permission isn't granted (Settings -> 4)."
+            } else {
+                onStep("Clearing Recents...")
+                val done = RecentsService.clearRecents(ctx)
+                if (!done) notes += "Could not find Clear all in Recents."
+            }
+        }
+
         val result = Result(closed, cands, caches, engine.title, notes)
         if (prefs.keepHistory) {
             CrashLog.guard(ctx, "history") {

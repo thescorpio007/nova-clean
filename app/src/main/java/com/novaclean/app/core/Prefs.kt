@@ -69,6 +69,11 @@ class Prefs(ctx: Context) {
         get() = str("widget_label", "Clean now")
         set(v) = putS("widget_label", v.trim().ifEmpty { "Clean now" }.take(20))
 
+    /** After a clean, open Recents and tap Clear all (needs the Nova Clean Recents accessibility service). */
+    var clearRecents: Boolean
+        get() = bool("clear_recents", false)
+        set(v) = put("clear_recents", v)
+
     /** Show system apps in Scan so the AI can assess them. The user approves every closing. */
     var exploreSystem: Boolean
         get() = bool("explore_system", false)
@@ -109,6 +114,7 @@ class Prefs(ctx: Context) {
         put("model", model)
         put("fallbackModel", fallbackModel)
         put("exploreSystem", exploreSystem)
+        put("clearRecents", clearRecents)
         put("protected", JSONArray(protectedPkgs.toList()))
         put("unlocked", JSONArray(unlockedPkgs.toList()))
         put("closeApps", closeApps)
@@ -127,6 +133,7 @@ class Prefs(ctx: Context) {
         if (o.has("model")) model = o.getString("model")
         if (o.has("fallbackModel")) fallbackModel = o.getString("fallbackModel")
         if (o.has("exploreSystem")) exploreSystem = o.getBoolean("exploreSystem")
+        if (o.has("clearRecents")) clearRecents = o.getBoolean("clearRecents")
         if (o.has("protected")) {
             val a = o.getJSONArray("protected")
             protectedPkgs = (0 until a.length()).map { a.getString(it) }.toSet()
