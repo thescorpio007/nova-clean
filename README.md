@@ -75,3 +75,5 @@ The workflow refuses to publish an APK when `KEYSTORE_BASE64` is missing.
 - 2.0: Nova Clean Recents (optional accessibility service) opens Recents and taps Clear all after Clean now / Close selected. Setting in 4. Permissions and background; nothing is read from other apps. VPN apps no longer auto-locked; per-app Unprotect with warning; Clean now covers system apps too.
 
 - 2.0: Nova Clean Recents no longer leaves the app after a failed tap, detects more Clear all layouts (icon-only buttons, more labels, retries once), and Settings -> 4 has a Test Clear Recents now button.
+
+- 2.0: Clear Recents now also dismisses each app card individually when there is no single Clear all button (TV launchers), instead of giving up.

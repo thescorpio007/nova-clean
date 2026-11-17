@@ -182,15 +182,8 @@ class MainViewModel(private val app: Application) : AndroidViewModel(app) {
         }
         viewModelScope.launch {
             _ui.update { it.copy(recentsTesting = true, recentsTestMsg = "Opening Recents...") }
-            val ok = com.novaclean.app.core.RecentsService.clearRecents(app)
-            _ui.update {
-                it.copy(
-                    recentsTesting = false,
-                    recentsTestMsg = if (ok) "Worked: Clear all was tapped." else
-                        "Could not find Clear all on this screen. Open Recents yourself to see its exact layout, " +
-                            "and send a screenshot so this can be improved for your phone.",
-                )
-            }
+            val msg = com.novaclean.app.core.RecentsService.clearRecents(app)
+            _ui.update { it.copy(recentsTesting = false, recentsTestMsg = msg) }
         }
     }
 
@@ -368,8 +361,7 @@ class MainViewModel(private val app: Application) : AndroidViewModel(app) {
                 recentsNote = " Clear Recents is on but not granted (Settings -> 4)."
             } else {
                 _ui.update { it.copy(busy = "Clearing Recents...") }
-                val done = com.novaclean.app.core.RecentsService.clearRecents(app)
-                recentsNote = if (done) " Recents cleared." else " Could not find Clear all."
+                recentsNote = " " + com.novaclean.app.core.RecentsService.clearRecents(app)
             }
         }
         _ui.update { st ->
